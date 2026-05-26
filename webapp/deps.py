@@ -1,0 +1,143 @@
+"""FastAPI dependencies — Service'larga va autentifikatsiyaga kirish.
+
+`AppContainer` — main.py kompozitsiyaga ulanadi va `app.state.container` orqali
+saqlanadi. Routerlar `Depends(...)` orqali kerakli service'larni oladi.
+"""
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass
+from typing import Optional
+
+from fastapi import Depends, Header, HTTPException, Request, status
+
+from Service.address_service import AddressService
+from Service.analytics_service import AnalyticsService
+from Service.broadcast_service import BroadcastService
+from Service.cart_service import CartService
+from Service.courier_service import CourierService
+from Service.food_service import FoodService
+from Service.ledger_service import LedgerService
+from Service.notification_service import NotificationService
+from Service.order_service import OrderService
+from Service.settings_service import SettingsService
+from Service.user_service import UserService
+from webapp.auth import InitDataError, TelegramUser, verify_init_data
+
+log = logging.getLogger(__name__)
+
+
+@dataclass(slots=True)
+class AppContainer:
+    """main.py'da yaratiladi va FastAPI app.state.container ga biriktiriladi."""
+
+    user_service: UserService
+    food_service: FoodService
+    order_service: OrderService
+    notification_service: NotificationService
+    cart_service: CartService
+    courier_service: CourierService
+    address_service: AddressService
+    ledger_service: LedgerService
+    analytics_service: AnalyticsService
+    broadcast_service: BroadcastService
+    settings_service: SettingsService
+    customer_bot_token: str
+    admin_bot_token: str           # Admin Mini App initData verification uchun
+    brand_name: str
+    admin_telegram_ids: tuple[int, ...] = ()
+    operator_telegram_ids: tuple[int, ...] = ()
+    rate_limit_per_minute: int = 60
+
+
+def _container(request: Request) -> AppContainer:
+    container = getattr(request.app.state, "container", None)
+    if container is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Server hali ishga tushmadi.",
+        )
+    return container
+
+
+def get_user_service(c: AppContainer = Depends(_container)) -> UserService:
+    return c.user_service
+
+
+def get_food_service(c: AppContainer = Depends(_container)) -> FoodService:
+    return c.food_service
+
+
+def get_order_service(c: AppContainer = Depends(_container)) -> OrderService:
+    return c.order_service
+
+
+def get_notification_service(c: AppContainer = Depends(_container)) -> NotificationService:
+    return c.notification_service
+
+
+def get_cart_service(c: AppContainer = Depends(_container)) -> CartService:
+    return c.cart_service
+
+
+def get_courier_service(c: AppContainer = Depends(_container)) -> CourierService:
+    return c.courier_service
+
+
+def get_address_service(c: AppContainer = Depends(_container)) -> AddressService:
+    return c.address_service
+
+
+def get_ledger_service(c: AppContainer = Depends(_container)) -> LedgerService:
+    return c.ledger_service
+
+
+def get_analytics_service(c: AppContainer = Depends(_container)) -> AnalyticsService:
+    return c.analytics_service
+
+
+def get_broadcast_service(c: AppContainer = Depends(_container)) -> BroadcastService:
+    return c.broadcast_service
+
+
+def get_settings_service(c: AppContainer = Depends(_container)) -> SettingsService:
+    return c.settings_service
+
+
+def get_brand_name(c: AppContainer = Depends(_container)) -> str:
+    return c.brand_name
+
+
+# ---------------------- Telegram Mini App auth ----------------------
+# `Authorization: tma <initData>` — Telegram'ning rasmiy tavsiyasi.
+# Frontend `WebApp.initData` ni xuddi shu ko'rinishda yuboradi.
+
+_AUTH_PREFIX = "tma "
+
+
+def telegram_user(
+    request: Request,
+    authorization: Optional[str] = Header(default=None),
+    c: AppContainer = Depends(_container),
+) -> TelegramUser:
+    """Joriy so'rovning Telegram foydalanuvchisini qaytaradi (HMAC tekshirilgan).
+
+    Header formati: `Authorization: tma <initData query string>`.
+    """
+    if not authorization or not authorization.lower().startswith(_AUTH_PREFIX):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authorization header yo'q yoki noto'g'ri (kutilgan: 'tma <initData>').",
+            headers={"WWW-Authenticate": 'tma realm="webapp"'},
+        )
+    init_data = authorization[len(_AUTH_PREFIX):].strip()
+    try:
+        return verify_init_data(init_data, bot_token=c.customer_bot_token)
+    except InitDataError:
+        # 401 — odatda eski sessiya. INFO darajasida (spam emas).
+        log.info("InitData rad etildi ip=%s", request.client.host if request.client else "?")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Avtorizatsiya muvaffaqiyatsiz. Mini App'ni qaytadan oching.",
+            headers={"WWW-Authenticate": 'tma realm="webapp"'},
+        )

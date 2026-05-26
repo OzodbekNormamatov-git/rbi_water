@@ -1,0 +1,179 @@
+// Admin API client — Telegram WebApp initData orqali auth (huddi user mini-app kabi).
+// Har so'rovga `Authorization: tma <initData>` header qo'shiladi.
+
+const tg = window.Telegram && window.Telegram.WebApp;
+const initData = tg ? tg.initData : "";
+
+const BASE = "";
+
+async function request(path, { method = "GET", body, signal } = {}) {
+  const headers = {
+    "Authorization": `tma ${initData}`,
+    "Accept": "application/json",
+  };
+  if (body !== undefined) headers["Content-Type"] = "application/json";
+
+  let res;
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      method, headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      signal,
+    });
+  } catch (e) {
+    throw new ApiError("network_error", "Tarmoq xatosi.");
+  }
+
+  let data = null;
+  const ct = res.headers.get("content-type") || "";
+  if (ct.includes("application/json")) {
+    try { data = await res.json(); } catch { data = null; }
+  }
+
+  if (!res.ok) {
+    const detail = (data && (data.detail || data.message || data.error)) || `HTTP ${res.status}`;
+    const message = typeof detail === "string" ? detail : "Xatolik";
+    if (res.status === 401) throw new ApiError("unauthorized", message);
+    if (res.status === 403) throw new ApiError("forbidden", message);
+    throw new ApiError(`http_${res.status}`, message);
+  }
+  return data;
+}
+
+export class ApiError extends Error {
+  constructor(code, message) { super(message); this.code = code; }
+}
+
+export const api = {
+  me:           () => request("/api/admin/auth/me"),
+  stats:        () => request("/api/admin/stats"),
+
+  // Moliyaviy hisobotlar (oylik / yillik)
+  financeMonthly: (year, month) => {
+    const q = new URLSearchParams();
+    if (year)  q.set("year",  String(year));
+    if (month) q.set("month", String(month));
+    return request(`/api/admin/finance/monthly${q.toString() ? "?" + q : ""}`);
+  },
+  financeYearly: (year) => {
+    const q = new URLSearchParams();
+    if (year) q.set("year", String(year));
+    return request(`/api/admin/finance/yearly${q.toString() ? "?" + q : ""}`);
+  },
+
+  // Mijozlar faolligi + pik vaqtlar
+  activity: (days = 30) => request(`/api/admin/activity?days=${days}`),
+
+  // Tizim sozlamalari (cashback toggle/percent)
+  settings:          () => request("/api/admin/settings"),
+  updateSettings:    (body) => request("/api/admin/settings", { method: "PATCH", body }),
+  cashbackOverview:  () => request("/api/admin/settings/cashback"),
+
+  // Broadcasts
+  broadcasts:       ({ limit, offset } = {}) => {
+    const sp = new URLSearchParams();
+    if (limit  != null) sp.set("limit",  String(limit));
+    if (offset != null) sp.set("offset", String(offset));
+    return request(`/api/admin/broadcasts${sp.toString() ? "?" + sp : ""}`);
+  },
+  broadcast:        (id) => request(`/api/admin/broadcasts/${id}`),
+  cancelBroadcast:  (id) => request(`/api/admin/broadcasts/${id}/cancel`, { method: "POST" }),
+  // Broadcast yaratish: multipart/form-data (matn + ixtiyoriy rasm bitta xabar).
+  createBroadcast:  async (formData) => {
+    const headers = { "Authorization": `tma ${initData}` };
+    // FormData uchun Content-Type'ni brauzer o'zi o'rnatadi (boundary bilan).
+    let res;
+    try {
+      res = await fetch("/api/admin/broadcasts", { method: "POST", headers, body: formData });
+    } catch (e) {
+      throw new ApiError("network_error", "Tarmoq xatosi.");
+    }
+    let data = null;
+    try { data = await res.json(); } catch (_) {}
+    if (!res.ok) {
+      const detail = (data && (data.detail || data.message)) || `HTTP ${res.status}`;
+      throw new ApiError(`http_${res.status}`, typeof detail === "string" ? detail : "Xatolik");
+    }
+    return data;
+  },
+
+  orders: (params = {}) => {
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) {
+      if (v != null && v !== "") q.set(k, String(v));
+    }
+    return request(`/api/admin/orders${q.toString() ? "?" + q : ""}`);
+  },
+  order:        (id) => request(`/api/admin/orders/${id}`),
+  cancelOrder:  (id) => request(`/api/admin/orders/${id}/cancel`, { method: "POST" }),
+
+  products:        ({ archived, limit, offset } = {}) => {
+    const sp = new URLSearchParams();
+    if (archived) sp.set("archived", "true");
+    if (limit  != null) sp.set("limit",  String(limit));
+    if (offset != null) sp.set("offset", String(offset));
+    return request(`/api/admin/products${sp.toString() ? "?" + sp : ""}`);
+  },
+  createProduct:   (body) => request("/api/admin/products", { method: "POST", body }),
+  updateProduct:   (id, body) => request(`/api/admin/products/${id}`, { method: "PATCH", body }),
+  deleteProduct:   (id) => request(`/api/admin/products/${id}`, { method: "DELETE" }),
+  restoreProduct:  (id) => request(`/api/admin/products/${id}/restore`, { method: "POST" }),
+
+  // Mahsulot rasmini yuklash — multipart/form-data, broadcast pattern bilan bir xil.
+  uploadProductImage: async (id, file) => {
+    const fd = new FormData();
+    fd.append("photo", file);
+    const headers = { "Authorization": `tma ${initData}` };
+    let res;
+    try {
+      res = await fetch(`/api/admin/products/${id}/image`, { method: "POST", headers, body: fd });
+    } catch (e) {
+      throw new ApiError("network_error", "Tarmoq xatosi.");
+    }
+    let data = null;
+    try { data = await res.json(); } catch (_) {}
+    if (!res.ok) {
+      const detail = (data && (data.detail || data.message)) || `HTTP ${res.status}`;
+      throw new ApiError(`http_${res.status}`, typeof detail === "string" ? detail : "Xatolik");
+    }
+    return data;
+  },
+  deleteProductImage: (id) => request(`/api/admin/products/${id}/image`, { method: "DELETE" }),
+
+  couriers:        ({ archived, limit, offset } = {}) => {
+    const sp = new URLSearchParams();
+    if (archived) sp.set("archived", "true");
+    if (limit  != null) sp.set("limit",  String(limit));
+    if (offset != null) sp.set("offset", String(offset));
+    return request(`/api/admin/couriers${sp.toString() ? "?" + sp : ""}`);
+  },
+  setCourier:      (id, is_active) => request(`/api/admin/couriers/${id}`, { method: "PATCH", body: { is_active } }),
+  // Kuryer maydonlarini yangilash — phone_number va/yoki is_active.
+  // body: { phone_number?: string|null, is_active?: boolean }
+  updateCourier:   (id, body) => request(`/api/admin/couriers/${id}`, { method: "PATCH", body }),
+
+  // Operator endpointlari (admin OR operator kira oladi)
+  operatorCustomerLookup: (phone) =>
+    request(`/api/admin/operator/customer-lookup?phone=${encodeURIComponent(phone)}`),
+  operatorCreateOrder: (body) =>
+    request("/api/admin/operator/orders", { method: "POST", body }),
+
+  customers: (q = "", { limit, offset } = {}) => {
+    const sp = new URLSearchParams();
+    if (q) sp.set("q", q);
+    if (limit  != null) sp.set("limit",  String(limit));
+    if (offset != null) sp.set("offset", String(offset));
+    return request(`/api/admin/customers${sp.toString() ? "?" + sp : ""}`);
+  },
+  customerOrders: (id, { limit, offset } = {}) => {
+    const sp = new URLSearchParams();
+    if (limit  != null) sp.set("limit",  String(limit));
+    if (offset != null) sp.set("offset", String(offset));
+    return request(`/api/admin/customers/${id}/orders${sp.toString() ? "?" + sp : ""}`);
+  },
+  adjustCashback: (id, body) => request(`/api/admin/customers/${id}/cashback`, { method: "POST", body }),
+  adjustBottles:  (id, body) => request(`/api/admin/customers/${id}/bottles`, { method: "POST", body }),
+};
+
+export const isTelegram = !!tg;
+export const tgApp = tg;

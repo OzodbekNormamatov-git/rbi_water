@@ -1,0 +1,300 @@
+"""High-level NotificationService — yuborish/edit orkestratsiyasi.
+
+Tashqi API eski versiyaga moslashgan (callers o'zgartirmasdan ishlaydi).
+Formatter sof funktiyalar `formatters.py` da — alohida testlash mumkin.
+"""
+from __future__ import annotations
+
+import logging
+from typing import Iterable, Optional
+
+from aiogram import Bot
+from aiogram.exceptions import TelegramAPIError, TelegramForbiddenError
+
+from Domain.models.order import Order
+from Service.notifications.formatters import (
+    format_customer_arrived,
+    format_customer_timeline,
+    format_dm_for_courier,
+    format_group_claimed,
+    format_group_new,
+    make_courier_dm_kb,
+    make_group_new_kb,
+)
+
+log = logging.getLogger(__name__)
+
+
+class NotificationService:
+    """Telegram orqali xabar yuborish/tahrirlashning kompozit qatlami.
+
+    Bot'lar va WebApp shu yagona service'ni chaqiradi.
+    """
+
+    def __init__(
+        self,
+        *,
+        courier_bot: Bot,
+        customer_bot: Bot,
+        admin_bot: Bot,
+        courier_group_chat_id: int,
+        admin_telegram_ids: Iterable[int],
+        brand_name: str,
+    ) -> None:
+        self._courier_bot = courier_bot
+        self._customer_bot = customer_bot
+        self._admin_bot = admin_bot
+        self._courier_group_chat_id = courier_group_chat_id
+        self._admin_telegram_ids = list(admin_telegram_ids)
+        self._brand_name = brand_name
+
+    # ---------------------- Couriers group ----------------------
+
+    async def dispatch_to_couriers_group(self, order: Order) -> Optional[int]:
+        try:
+            msg = await self._courier_bot.send_message(
+                chat_id=self._courier_group_chat_id,
+                text=format_group_new(order),
+                reply_markup=make_group_new_kb(order.id),
+                disable_web_page_preview=True,
+            )
+        except TelegramAPIError as e:
+            log.error(
+                "Kuryerlar guruhiga xabar yuborib bo'lmadi (chat_id=%s, order=%s): %s",
+                self._courier_group_chat_id, order.id, e,
+            )
+            await self._alert_admins(
+                f"⚠️ <b>Buyurtma #{order.id}</b> kuryerlar guruhiga yuborilmadi!\n\n"
+                f"Sabab: <code>{e}</code>\n\n"
+                f"Tekshiring: COURIER_GROUP_CHAT_ID to'g'rimi va kuryer boti "
+                f"guruhga qo'shilganmi (admin sifatida)."
+            )
+            return None
+        try:
+            await self._courier_bot.send_location(
+                chat_id=self._courier_group_chat_id,
+                latitude=float(order.delivery_latitude),
+                longitude=float(order.delivery_longitude),
+                reply_to_message_id=msg.message_id,
+            )
+        except TelegramAPIError as e:
+            log.warning("Guruhga lokatsiya yuborilmadi #%s: %s", order.id, e)
+        return msg.message_id
+
+    async def reopen_group_message(self, order: Order) -> None:
+        if not order.group_message_id:
+            return
+        try:
+            await self._courier_bot.edit_message_text(
+                chat_id=self._courier_group_chat_id,
+                message_id=order.group_message_id,
+                text=format_group_new(order),
+                reply_markup=make_group_new_kb(order.id),
+                disable_web_page_preview=True,
+            )
+        except TelegramAPIError as e:
+            log.warning("Guruh xabarini qayta ochib bo'lmadi #%s: %s", order.id, e)
+
+    async def mark_group_message_claimed(self, order: Order) -> None:
+        if not order.group_message_id:
+            return
+        try:
+            await self._courier_bot.edit_message_text(
+                chat_id=self._courier_group_chat_id,
+                message_id=order.group_message_id,
+                text=format_group_claimed(order),
+                reply_markup=None,
+                disable_web_page_preview=True,
+            )
+        except TelegramAPIError as e:
+            log.warning("Guruh xabarini tahrirlab bo'lmadi #%s: %s", order.id, e)
+
+    # ---------------------- Courier DM ----------------------
+
+    async def send_order_to_courier_dm(self, order: Order) -> Optional[int]:
+        if not order.courier:
+            log.error("DM uchun order.courier yo'q — order=%s", order.id)
+            return None
+        chat_id = order.courier.telegram_id
+        try:
+            text_msg = await self._courier_bot.send_message(
+                chat_id=chat_id,
+                text=format_dm_for_courier(order),
+                reply_markup=make_courier_dm_kb(order),
+                disable_web_page_preview=True,
+            )
+        except TelegramForbiddenError:
+            raise
+        except TelegramAPIError:
+            log.exception(
+                "Kuryerga DM yuborib bo'lmadi (text) order=%s tg=%s", order.id, chat_id
+            )
+            return None
+        try:
+            await self._courier_bot.send_location(
+                chat_id=chat_id,
+                latitude=float(order.delivery_latitude),
+                longitude=float(order.delivery_longitude),
+                reply_to_message_id=text_msg.message_id,
+            )
+        except TelegramAPIError:
+            log.warning(
+                "Kuryerga DM lokatsiya yuborilmadi order=%s tg=%s", order.id, chat_id
+            )
+        return text_msg.message_id
+
+    async def update_courier_dm_message(self, order: Order) -> None:
+        if not order.courier or not order.courier_dm_message_id:
+            return
+        try:
+            await self._courier_bot.edit_message_text(
+                chat_id=order.courier.telegram_id,
+                message_id=order.courier_dm_message_id,
+                text=format_dm_for_courier(order),
+                reply_markup=make_courier_dm_kb(order),
+                disable_web_page_preview=True,
+            )
+        except TelegramAPIError as e:
+            log.warning("Kuryer DM xabarini tahrirlab bo'lmadi #%s: %s", order.id, e)
+
+    # ---------------------- Customer DM (timeline) ----------------------
+
+    @staticmethod
+    def _customer_can_receive_dm(order: Order) -> bool:
+        """Mijozga DM yuborish mumkinmi?
+
+        Quyidagi hollarda yo'q:
+          * `customer` relationi yuklanmagan (orphan order)
+          * `has_started_bot=False` (operator yaratgan "guest" mijoz yoki
+            ilk marta bot bilan ishlamagan mavjud mijoz)
+          * `telegram_id` manfiy (sintetik ID — bot bilan ishlamaydi)
+
+        Bu tekshiruv Telegram API'ga ortiqcha urinishni va log noise'ni
+        oldini oladi (`TelegramForbiddenError` baribir tushardi).
+        """
+        customer = getattr(order, "customer", None)
+        if customer is None:
+            return False
+        if not getattr(customer, "has_started_bot", False):
+            return False
+        tg_id = int(getattr(customer, "telegram_id", 0) or 0)
+        if tg_id <= 0:
+            return False
+        return True
+
+    async def upsert_customer_status_message(self, order: Order) -> Optional[int]:
+        """Mijozga yagona "holat lentasi" xabarini yuboradi yoki tahrirlaydi.
+
+        Mijoz botda /start bosmagan bo'lsa (operator yaratgan "guest" mijoz) —
+        silent skip, hech qanday API chaqiruv qilmaymiz.
+
+        Returns:
+            Yangi yuborilgan bo'lsa msg_id (caller saqlashi kerak), edit yoki skip — None.
+        """
+        if not self._customer_can_receive_dm(order):
+            return None
+        tg_id = order.customer.telegram_id
+        body = format_customer_timeline(order, self._brand_name)
+
+        if order.customer_dm_message_id:
+            try:
+                await self._customer_bot.edit_message_text(
+                    chat_id=tg_id,
+                    message_id=order.customer_dm_message_id,
+                    text=body,
+                    disable_web_page_preview=True,
+                )
+                return None
+            except TelegramAPIError as e:
+                if "message is not modified" in str(e).lower():
+                    return None
+                log.info(
+                    "Mijoz status xabarini edit qilib bo'lmadi (order=%s): %s — yangi xabar yuboriladi.",
+                    order.id, e,
+                )
+
+        try:
+            msg = await self._customer_bot.send_message(
+                chat_id=tg_id, text=body, disable_web_page_preview=True,
+            )
+            return msg.message_id
+        except TelegramAPIError as e:
+            log.warning("Mijozga status xabarini yuborib bo'lmadi (order=%s, tg=%s): %s", order.id, tg_id, e)
+            return None
+
+    # ---------------------- Customer ARRIVED alert (alohida xabar) ----------------------
+
+    async def send_customer_arrived_alert(self, order: Order) -> Optional[int]:
+        """Mijozga "buyurtmangiz yetib keldi!" alohida xabar yuboradi.
+
+        Asosiy timeline xabariga TEGMAYDI — bu yangi, qisqa, e'tiborni jalb qiluvchi
+        bildirishnoma. Mijoz botda /start bosmagan bo'lsa silent skip.
+        Idempotent: agar shu order uchun avval yuborilgan bo'lsa, qaytadan yubormaydi.
+        """
+        if order.customer_arrived_message_id:
+            return None
+        if not self._customer_can_receive_dm(order):
+            return None
+        tg_id = order.customer.telegram_id
+        try:
+            msg = await self._customer_bot.send_message(
+                chat_id=tg_id,
+                text=format_customer_arrived(order),
+                disable_web_page_preview=True,
+            )
+            return msg.message_id
+        except TelegramAPIError as e:
+            log.warning(
+                "Mijozga 'yetib keldi' xabarini yuborib bo'lmadi (order=%s, tg=%s): %s",
+                order.id, tg_id, e,
+            )
+            return None
+
+    async def delete_customer_arrived_alert(self, order: Order) -> None:
+        """ARRIVED bildirishnomasini o'chiradi (DELIVERED bo'lganda chaqiriladi).
+
+        Telegram xato qaytarsa (xabar topilmadi va h.k.) — silent o'tamiz.
+        """
+        if not order.customer_arrived_message_id:
+            return
+        try:
+            tg_id = order.customer.telegram_id
+        except AttributeError:
+            return
+        try:
+            await self._customer_bot.delete_message(
+                chat_id=tg_id, message_id=order.customer_arrived_message_id,
+            )
+        except TelegramAPIError as e:
+            log.info(
+                "ARRIVED xabarini o'chirib bo'lmadi (order=%s) — Telegram: %s. "
+                "Davom etamiz (mijoz qo'lda o'chirgan bo'lishi mumkin).",
+                order.id, e,
+            )
+
+    # ---------------------- Admin alerts ----------------------
+
+    async def _alert_admins(self, text: str) -> None:
+        for admin_id in self._admin_telegram_ids:
+            try:
+                await self._admin_bot.send_message(chat_id=admin_id, text=text)
+            except TelegramAPIError as e:
+                log.warning(
+                    "Adminga ogohlantirish yuborib bo'lmadi tg=%s: %s "
+                    "(admin admin_botga /start bosganmi?)", admin_id, e,
+                )
+
+    async def notify_admins_new_order(self, order: Order) -> None:
+        """ESKI USUL — har buyurtma uchun adminga xabar. Yangi kod chaqirmaydi
+        (foydalanuvchi bu xabarlarni o'chirishni so'ragan). Kerak bo'lsa qaytadan ulang.
+        """
+        text = (
+            f"🆕 Yangi buyurtma #{order.id}\n"
+            f"Mijoz: {order.customer.full_name} ({order.contact_phone})\n"
+            f"Jami: {order.total_amount} so'm"
+        )
+        for admin_id in self._admin_telegram_ids:
+            try:
+                await self._admin_bot.send_message(chat_id=admin_id, text=text)
+            except TelegramAPIError as e:
+                log.warning("Adminga xabar yuborib bo'lmadi tg=%s: %s", admin_id, e)
