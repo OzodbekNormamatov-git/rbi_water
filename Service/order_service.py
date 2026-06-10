@@ -159,6 +159,14 @@ class OrderService:
                         "food_unavailable",
                         context={"food_id": item.food_id},
                     )
+                # Per-mahsulot minimal buyurtma soni — admin belgilaydi (default 1).
+                # `getattr` fallback — migration kechiksa ham oqim yiqilmasin.
+                min_q = int(getattr(food, "min_quantity", 1) or 1)
+                if item.quantity < min_q:
+                    raise ValidationError(
+                        "item_below_minimum",
+                        context={"name": food.name, "min": min_q},
+                    )
                 line = OrderItem(
                     food_id=food.id,
                     food_name=food.name,
@@ -168,16 +176,6 @@ class OrderService:
                 items_total += food.price * item.quantity
                 total_qty += int(item.quantity)
                 order_items.append(line)
-
-            # Minimal buyurtma soni — admin AppSettings'da belgilaydi (default 1 = cheklov yo'q).
-            # Mahsulotlar umumiy soni shu chegaradan kam bo'lsa — rad etamiz
-            # (kichik buyurtmalar yetkazib berish narxini qoplamaydi). Server tomondan
-            # majburiy — frontend ham bloklaydi, lekin bu yagona ishonchli manba.
-            min_order_qty = int(getattr(cfg, "min_order_quantity", 1) or 1)
-            if total_qty < min_order_qty:
-                raise ValidationError(
-                    "order_below_minimum", context={"min": min_order_qty},
-                )
 
             # Bottles issued (default: items'ning umumiy soni — har bir mahsulot 1 idish)
             bottles_issued = (

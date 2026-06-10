@@ -74,17 +74,23 @@ def products_menu_kb(foods: Sequence[Food]) -> ReplyKeyboardMarkup:
 
 # ---------------------- Mahsulot ichidagi miqdor menyusi ----------------------
 
-def quantity_kb() -> ReplyKeyboardMarkup:
-    """Mahsulot kartasi ochilganda chiqadigan miqdor tugmalari: 3..11 + Orqaga."""
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="3"), KeyboardButton(text="4"), KeyboardButton(text="5")],
-            [KeyboardButton(text="6"), KeyboardButton(text="7"), KeyboardButton(text="8")],
-            [KeyboardButton(text="9"), KeyboardButton(text="10"), KeyboardButton(text="11")],
-            [KeyboardButton(text=BTN_BACK)],
-        ],
-        resize_keyboard=True,
-    )
+def quantity_kb(min_quantity: int = 1) -> ReplyKeyboardMarkup:
+    """Mahsulot kartasi ochilganda chiqadigan miqdor tugmalari + Orqaga.
+
+    Per-mahsulot minimal buyurtma hisobga olinadi:
+      * min <= 3  — eski 3..11 diapazon saqlanadi (UX o'zgarmaydi)
+      * min > 3   — tugmalar min..min+8 dan boshlanadi (mijoz noto'g'ri
+        sonni tanlay olmaydi; matn kiritsa ham bot validatsiya qiladi)
+    """
+    min_q = max(1, int(min_quantity or 1))
+    start = 3 if min_q <= 3 else min_q
+    nums = [start + i for i in range(9)]
+    rows = [
+        [KeyboardButton(text=str(n)) for n in nums[i:i + 3]]
+        for i in range(0, 9, 3)
+    ]
+    rows.append([KeyboardButton(text=BTN_BACK)])
+    return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 
 
 # ---------------------- Savatcha menyusi ----------------------

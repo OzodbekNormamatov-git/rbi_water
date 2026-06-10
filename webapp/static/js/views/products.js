@@ -46,6 +46,7 @@ export function renderProducts(root) {
           <div class="product-card__body">
             <div class="product-card__name">${escapeHtml(p.name)}</div>
             <div class="product-card__price">${fmtMoney(p.price)}</div>
+            ${Number(p.min_quantity || 1) > 1 ? `<div class="muted" style="font-size:11px">min ${p.min_quantity} dona</div>` : ""}
           </div>
         </div>`;
     }).join("");

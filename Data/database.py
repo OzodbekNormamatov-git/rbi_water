@@ -144,9 +144,9 @@ _MIGRATIONS: tuple[str, ...] = (
         last_number INTEGER NOT NULL DEFAULT 0
     )""",
 
-    # ------ v11: Minimal buyurtma soni ------
-    # AppSettings.min_order_quantity — default 1 (cheklov yo'q).
-    "ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS min_order_quantity INTEGER NOT NULL DEFAULT 1",
+    # ------ v11 (BEKOR QILINGAN): global min_order_quantity — v13'da per-mahsulot
+    # `foods.min_quantity` bilan almashtirildi. ADD entry olib tashlangan, chunki
+    # model'da ustun yo'q — fresh DB'da orphan ustun yaratmaslik kerak.
 
     # ------ v12: Kuryer naqd pul balansi ------
     # Courier.cash_balance — kuryer qo'lidagi naqd (DELIVERED'da += total_amount).
@@ -160,6 +160,12 @@ _MIGRATIONS: tuple[str, ...] = (
            CHECK (cash_balance >= 0);
        END IF;
        END $$""",
+
+    # ------ v13: Per-mahsulot minimal buyurtma soni ------
+    # Food.min_quantity — mahsulot bo'yicha minimal dona (default 1 = cheklov yo'q).
+    "ALTER TABLE foods ADD COLUMN IF NOT EXISTS min_quantity INTEGER NOT NULL DEFAULT 1",
+    # Global min_order_quantity bekor qilindi — per-mahsulot min bilan almashtirildi.
+    "ALTER TABLE app_settings DROP COLUMN IF EXISTS min_order_quantity",
 )
 
 

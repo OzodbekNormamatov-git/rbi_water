@@ -65,23 +65,29 @@ export function renderReorder(root, { orderId }) {
 
     const productMap = new Map((products || []).map((p) => [p.id, p]));
 
-    // Har bir item uchun: mavjudmi + joriy narx.
+    // Har bir item uchun: mavjudmi + joriy narx + minimal buyurtma clamp.
     const resolved = (order.items || []).map((it) => {
       const p = productMap.get(it.food_id);
       const available = !!p;
       const price = available ? Number(p.price) : Number(it.unit_price);
+      // Per-mahsulot minimal: eski buyurtma miqdori joriy min'dan past bo'lsa,
+      // minimalga ko'taramiz (aks holda server item_below_minimum bilan rad etadi).
+      const minQ = available ? Math.max(1, Number(p.min_quantity || 1)) : 1;
+      const quantity = available ? Math.max(it.quantity, minQ) : it.quantity;
       return {
         food_id: it.food_id,
         name: it.food_name,
-        quantity: it.quantity,
+        quantity,
+        adjusted: available && quantity !== it.quantity,
         available,
         price,
-        line_total: available ? price * it.quantity : 0,
+        line_total: available ? price * quantity : 0,
       };
     });
 
     const availableItems = resolved.filter((r) => r.available);
     const removedItems = resolved.filter((r) => !r.available);
+    const adjustedItems = availableItems.filter((r) => r.adjusted);
     const total = availableItems.reduce((s, r) => s + r.line_total, 0);
     const canOrder = availableItems.length > 0;
 
@@ -121,6 +127,13 @@ export function renderReorder(root, { orderId }) {
         <div class="card" style="margin-top:10px;border-color:var(--brand-warning)">
           <div style="font-size:13px;color:var(--brand-warning-strong)">
             ⚠️ ${removedItems.length} ta mahsulot endi mavjud emas — ular buyurtmaga kiritilmaydi.
+          </div>
+        </div>` : ""}
+
+      ${adjustedItems.length ? `
+        <div class="card" style="margin-top:10px;border-color:var(--brand-warning)">
+          <div style="font-size:13px;color:var(--brand-warning-strong)">
+            ⚠️ ${adjustedItems.length} ta mahsulot miqdori minimal buyurtma talabiga moslab oshirildi.
           </div>
         </div>` : ""}
 

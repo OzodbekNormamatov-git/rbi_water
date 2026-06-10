@@ -319,7 +319,7 @@ def build_customer_dispatcher(
             message,
             image_value=food.image_file_id,
             text=_food_card_text(food, in_cart),
-            reply_markup=quantity_kb(),
+            reply_markup=quantity_kb(int(getattr(food, "min_quantity", 1) or 1)),
         )
 
     # ---------------------- Mahsulot kartasi (miqdor tanlash) ----------------------
@@ -359,6 +359,13 @@ def build_customer_dispatcher(
             await _save_cart(state, cart)
             await message.answer(f"<b>{food.name}</b> savatchadan olib tashlandi.")
             await _show_products(message, state)
+            return
+        # Per-mahsulot minimal buyurtma (0 = o'chirish — yuqorida hal qilingan).
+        min_q = int(getattr(food, "min_quantity", 1) or 1)
+        if qty < min_q:
+            await message.answer(
+                f"❗️ Minimal buyurtma: {min_q} dona. Kamida {min_q} dona kiriting."
+            )
             return
         cart[food.id] = qty
         await _save_cart(state, cart)

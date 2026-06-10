@@ -466,16 +466,25 @@ def build_admin_dispatcher(
             except (ValueError, IndexError):
                 await cb.answer()
                 return
+            # Per-mahsulot minimal: 0 → birinchi "+" min'ga sakraydi; "−" min
+            # ostiga tushsa — 0 (olib tashlash). Picker refresh uchun foods
+            # baribir kerak — oldindan o'qib, min'ni ham shu yerdan olamiz.
+            foods = await food_service.list_menu()
+            food = next((f for f in foods if f.id == food_id), None)
+            min_q = int(getattr(food, "min_quantity", 1) or 1) if food else 1
             cur = cart.get(food_id, 0)
-            cur = cur + 1 if action == "inc" else cur - 1
-            cur = max(0, min(cur, 999))
+            if action == "inc":
+                cur = min_q if cur < min_q else min(cur + 1, 999)
+            else:
+                cur = cur - 1
+                if cur < min_q:
+                    cur = 0
             if cur == 0:
                 cart.pop(food_id, None)
             else:
                 cart[food_id] = cur
             await state.update_data(op_cart=cart)
             if msg_id is not None:
-                foods = await food_service.list_menu()
                 await _op_refresh_picker(bot, cb.message.chat.id, msg_id, cart, foods)
             await cb.answer()
             return

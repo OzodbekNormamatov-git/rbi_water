@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from sqlalchemy import Boolean, Integer, Numeric
+from sqlalchemy import Boolean, Numeric
 from sqlalchemy.orm import Mapped, mapped_column
 
 from Domain.models.base import Base, TimestampMixin
@@ -42,10 +42,5 @@ class AppSettings(Base, TimestampMixin):
         Numeric(5, 2), nullable=False, default=Decimal("1.00"),
     )
 
-    # ---- Buyurtma config ----
-    # Minimal buyurtma soni — bitta buyurtmadagi mahsulotlar umumiy miqdori
-    # shu sondan kam bo'lsa, buyurtma rad etiladi. Default 1 = cheklov yo'q.
-    # Admin kichik (kompaniyaga zararli) buyurtmalarni bloklash uchun oshiradi.
-    min_order_quantity: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=1,
-    )
+    # Eslatma: ilgari bu yerda global `min_order_quantity` bor edi — endi
+    # per-mahsulot `Food.min_quantity` bilan almashtirilgan (migration 0013).

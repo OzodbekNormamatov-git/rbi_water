@@ -26,7 +26,7 @@ _MESSAGES: Dict[str, Dict[str, str]] = {
         "cart_empty":            "Savatcha bo'sh.",
         "cart_item_qty_invalid": "Mahsulot soni 0 dan katta bo'lishi kerak.",
         "cart_item_qty_too_big": "Bir mahsulotda {max} dan oshmasin.",
-        "order_below_minimum":   "Minimal buyurtma {min} dona. Iltimos, yana qo'shing.",
+        "item_below_minimum":    "\"{name}\" uchun minimal buyurtma {min} dona. Iltimos, miqdorni oshiring.",
         "food_unavailable":      "Mahsulot #{food_id} hozir mavjud emas.",
         "food_not_found":        "Mahsulot topilmadi.",
         "order_not_found":       "Buyurtma topilmadi.",
@@ -50,6 +50,7 @@ _MESSAGES: Dict[str, Dict[str, str]] = {
         "name_short":            "Nom juda qisqa.",
         "price_invalid":         "Narx noto'g'ri formatda.",
         "price_positive":        "Narx 0 dan katta bo'lishi kerak.",
+        "food_min_qty_invalid":  "Minimal buyurtma soni {min} va {max} oralig'ida bo'lishi shart.",
         # Courier
         "courier_not_registered":         "Kuryer ro'yxatda yo'q.",
         "cash_amount_invalid":            "Naqd summa noto'g'ri.",
@@ -72,7 +73,6 @@ _MESSAGES: Dict[str, Dict[str, str]] = {
         # Settings (admin)
         "settings_percent_out_of_range":  "Keshbek foizi {min}% va {max}% oralig'ida bo'lishi shart.",
         "settings_ratio_out_of_range":    "Keshbek bilan qoplash chegarasi {min} va {max} oralig'ida bo'lishi shart.",
-        "settings_min_order_out_of_range": "Minimal buyurtma soni {min} va {max} oralig'ida bo'lishi shart.",
         # Bottles
         "bottles_out_of_range":           "Idishlar soni 0..{max} oralig'ida bo'lishi shart.",
         "bottles_return_exceeds_balance": "Mijozda atigi {available} ta idish mavjud, {requested} ta qaytarib bo'lmaydi.",

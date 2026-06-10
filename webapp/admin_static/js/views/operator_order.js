@@ -312,7 +312,7 @@ export async function renderOperatorOrder(root) {
             <div class="op-product-row" data-id="${p.id}">
               <div class="op-product-name">
                 <div style="font-weight:600">${escapeHtml(p.name)}</div>
-                <div class="muted" style="font-size:12px">${fmtMoney(p.price)}</div>
+                <div class="muted" style="font-size:12px">${fmtMoney(p.price)}${Number(p.min_quantity || 1) > 1 ? ` · min ${p.min_quantity}` : ""}</div>
               </div>
               <div class="qty-stepper">
                 <button type="button" data-act="dec">−</button>
@@ -329,8 +329,14 @@ export async function renderOperatorOrder(root) {
         row.querySelectorAll("button[data-act]").forEach((btn) => {
           btn.addEventListener("click", () => {
             const act = btn.dataset.act;
+            const p = products.find((x) => x.id === id);
+            // Per-mahsulot minimal: birinchi "+" 0 → min sakraydi; "−" min
+            // ostiga tushsa — 0 (olib tashlash).
+            const minQ = Math.max(1, Number((p && p.min_quantity) || 1));
             const cur = cart.get(id) || 0;
-            const next = act === "inc" ? Math.min(cur + 1, 999) : Math.max(cur - 1, 0);
+            const next = act === "inc"
+              ? (cur < minQ ? minQ : Math.min(cur + 1, 999))
+              : (cur - 1 < minQ ? 0 : cur - 1);
             if (next === 0) cart.delete(id); else cart.set(id, next);
             qtyEl.textContent = next;
             updateCartSummary();

@@ -90,6 +90,10 @@ def food_card_text(food, *, in_cart: int = 0, show_status: bool = False, prompt:
     if desc:
         parts.append(desc)
     parts.append(f"Narxi: {fmt_money(food.price)}")
+    # Per-mahsulot minimal buyurtma — mijoz va admin kartalarida ko'rinadi.
+    min_q = int(getattr(food, "min_quantity", 1) or 1)
+    if min_q > 1:
+        parts.append(f"Minimal buyurtma: <b>{min_q} dona</b>")
     if in_cart > 0:
         parts.append(f"🛒 Savatchada: <b>{in_cart} dona</b>")
     if show_status:

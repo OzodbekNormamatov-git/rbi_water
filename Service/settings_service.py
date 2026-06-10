@@ -19,7 +19,6 @@ from typing import Optional
 from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
 
 from Data.unit_of_work import UnitOfWork
-from Domain.constants import DEFAULT_MIN_ORDER_QUANTITY, MAX_MIN_ORDER_QUANTITY
 from Domain.models.app_settings import AppSettings
 from Service.exceptions import ValidationError
 
@@ -91,34 +90,3 @@ class SettingsService:
                 s.max_cashback_usage_ratio = Decimal(str(max_usage_ratio)).quantize(Decimal("0.01"))
             await uow.settings.add(s)
             return _to_config(s)
-
-    # ---------------------- Buyurtma sozlamalari ----------------------
-
-    async def get_min_order_quantity(self) -> int:
-        """Minimal buyurtma soni (bitta buyurtmadagi umumiy mahsulot miqdori)."""
-        async with UnitOfWork(self._sf) as uow:
-            s = await uow.settings.get_or_create()
-            return int(getattr(s, "min_order_quantity", DEFAULT_MIN_ORDER_QUANTITY) or DEFAULT_MIN_ORDER_QUANTITY)
-
-    async def set_min_order_quantity(self, value: int) -> int:
-        """Minimal buyurtma sonini yangilaydi (atomik). 1..MAX oralig'ida.
-
-        1 = cheklov yo'q. Noto'g'ri qiymat `ValidationError`.
-        """
-        try:
-            n = int(value)
-        except (TypeError, ValueError):
-            raise ValidationError(
-                "settings_min_order_out_of_range",
-                context={"min": 1, "max": MAX_MIN_ORDER_QUANTITY},
-            )
-        if n < 1 or n > MAX_MIN_ORDER_QUANTITY:
-            raise ValidationError(
-                "settings_min_order_out_of_range",
-                context={"min": 1, "max": MAX_MIN_ORDER_QUANTITY},
-            )
-        async with UnitOfWork(self._sf) as uow:
-            s = await uow.settings.get_for_update()
-            s.min_order_quantity = n
-            await uow.settings.add(s)
-            return n

@@ -196,7 +196,10 @@ def products_picker_kb(products, cart: dict) -> InlineKeyboardMarkup:
     rows = []
     for p in products:
         qty = cart.get(p.id, 0)
+        min_q = int(getattr(p, "min_quantity", 1) or 1)
         label = f"{p.name} — {p.price}"
+        if min_q > 1:
+            label += f" (min {min_q})"
         if qty > 0:
             label = f"{p.name} × {qty}"
         rows.append([

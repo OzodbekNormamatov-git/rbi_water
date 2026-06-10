@@ -10,7 +10,6 @@ import {
 import { go } from "../router.js";
 import { toast } from "../toast.js";
 import { showCTA, hideCTA } from "../cta.js";
-import { getConfig } from "../config.js";
 
 export function renderCart(root) {
   document.getElementById("screen-title").textContent = "Savatcha";
@@ -37,22 +36,15 @@ export function renderCart(root) {
   const total = () =>
     products.reduce((sum, p) => sum + Number(p.price) * cart.qty(p.id), 0);
 
-  const minOrder = () => Math.max(1, Number(getConfig().min_order_quantity || 1));
+  // Per-mahsulot minimal buyurtma soni (1 = cheklov yo'q).
+  const minOf = (p) => Math.max(1, Number((p && p.min_quantity) || 1));
 
   const updateCTA = () => {
     if (cart.isEmpty()) {
       hideCTA();
       return;
     }
-    const count = cart.totalCount();
-    const min = minOrder();
-    if (count < min) {
-      // Minimal buyurtma chegarasiga yetmagan — CTA bloklanadi.
-      const need = min - count;
-      showCTA(`Yana ${need} ta qo'shing (min. ${min})`, () => {}, { disabled: true });
-    } else {
-      showCTA(`Buyurtma berish · ${fmtMoney(total())}`, () => go("checkout"));
-    }
+    showCTA(`Buyurtma berish · ${fmtMoney(total())}`, () => go("checkout"));
   };
 
   const renderRows = () => {
@@ -70,21 +62,11 @@ export function renderCart(root) {
 
     const items = products.filter((p) => cart.qty(p.id) > 0);
 
-    // Minimal buyurtma ogohlantirishi (chegaraga yetmagan bo'lsa).
-    const _count = cart.totalCount();
-    const _min = minOrder();
-    const minNoticeHtml = _count < _min
-      ? `<div class="card" style="margin-top:10px;border-color:var(--brand-warning);background:var(--brand-tint)">
-           <div style="font-size:13px;color:var(--brand-warning-strong)">
-             ⚠️ Minimal buyurtma: <b>${_min} dona</b>. Yana <b>${_min - _count} ta</b> qo'shing.
-           </div>
-         </div>`
-      : "";
-
     root.innerHTML = `
       <div class="cart-list">
         ${items.map((p) => {
           const q = cart.qty(p.id);
+          const minQ = minOf(p);
           const thumb = p.image_url
             ? `<img src="${escapeHtml(p.image_url)}" alt="" />`
             : `<span class="cart-row__thumb-fallback">💧</span>`;
@@ -93,7 +75,7 @@ export function renderCart(root) {
               <div class="cart-row__thumb">${thumb}</div>
               <div class="cart-row__main">
                 <div class="cart-row__name">${escapeHtml(p.name)}</div>
-                <div class="cart-row__sub">${fmtMoney(p.price)} × ${q}</div>
+                <div class="cart-row__sub">${fmtMoney(p.price)} × ${q}${minQ > 1 ? ` · min ${minQ}` : ""}</div>
               </div>
               <div class="cart-row__qty">
                 <button class="cart-row__btn" data-act="dec" type="button" aria-label="Kamaytirish">−</button>
@@ -103,8 +85,6 @@ export function renderCart(root) {
             </div>`;
         }).join("")}
       </div>
-
-      ${minNoticeHtml}
 
       <div class="summary">
         <div class="summary__label">Jami</div>
@@ -124,15 +104,20 @@ export function renderCart(root) {
             hapticImpact("light");
             cart.inc(id);
           } else {
-            // Minimal buyurtma chegarasidan past tushishni bloklaymiz.
-            // (Savatchani butunlay tozalash "🗑" tugmasi orqali mumkin.)
-            const min = minOrder();
-            if (cart.totalCount() <= min && min > 1) {
-              toast(`Minimal buyurtma: ${min} dona. Kamaytirib bo'lmaydi.`, { error: true });
-              return;
+            // Per-mahsulot minimal: min'dan pastga tushib bo'lmaydi — mahsulot
+            // butunlay olib tashlanadi (yo kamida minQ ta, yo umuman yo'q).
+            const p = products.find((x) => x.id === id);
+            const minQ = minOf(p);
+            if (cart.qty(id) - 1 < minQ) {
+              hapticImpact("light");
+              cart.set(id, 0);
+              if (minQ > 1 && p) {
+                toast(`"${p.name}" savatchadan olib tashlandi (minimal ${minQ} dona)`);
+              }
+            } else {
+              hapticImpact("light");
+              cart.dec(id);
             }
-            hapticImpact("light");
-            cart.dec(id);
           }
         });
       });
@@ -152,6 +137,21 @@ export function renderCart(root) {
   (async () => {
     try {
       products = await api.products();
+      // Stale-cart clamp-up: admin min'ni oshirgandan keyin savatchada qolgan
+      // kam miqdorlar minimalga ko'tariladi (server cart ham sync bo'ladi) —
+      // aks holda checkout'da server `item_below_minimum` bilan rad etadi.
+      let clamped = 0;
+      for (const p of products) {
+        const q = cart.qty(p.id);
+        const minQ = minOf(p);
+        if (q > 0 && q < minQ) {
+          cart.set(p.id, minQ);
+          clamped++;
+        }
+      }
+      if (clamped) {
+        toast(`${clamped} ta mahsulot miqdori minimal buyurtmaga moslashtirildi`);
+      }
       renderRows();
       unsubscribe = cart.subscribe(renderRows);
     } catch (e) {

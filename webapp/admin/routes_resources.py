@@ -294,6 +294,8 @@ class AdminProductOut(BaseModel):
     name: str
     description: str = ""
     price: Decimal
+    # Minimal buyurtma soni (1 = cheklov yo'q)
+    min_quantity: int = 1
     is_available: bool
     image_path: Optional[str] = None
     deleted_at: Optional[str] = None   # ISO sana — arxivlangan bo'lsa
@@ -305,6 +307,8 @@ class ProductCreateIn(BaseModel):
     name: str = Field(min_length=2, max_length=120)
     description: str = Field(default="", max_length=2000)
     price: Decimal = Field(gt=0)
+    # Minimal buyurtma soni — 1..999 (service'da ham validatsiya)
+    min_quantity: int = Field(default=1, ge=1, le=999)
 
 
 class ProductUpdateIn(BaseModel):
@@ -312,12 +316,15 @@ class ProductUpdateIn(BaseModel):
     description: Optional[str] = Field(default=None, max_length=2000)
     price: Optional[Decimal] = Field(default=None, gt=0)
     is_available: Optional[bool] = None
+    min_quantity: Optional[int] = Field(default=None, ge=1, le=999)
 
 
 def _to_admin_product(f) -> AdminProductOut:
     return AdminProductOut(
         id=f.id, name=f.name, description=f.description or "",
-        price=f.price, is_available=f.is_available,
+        price=f.price,
+        min_quantity=int(getattr(f, "min_quantity", 1) or 1),
+        is_available=f.is_available,
         image_path=f.image_file_id,
         deleted_at=f.deleted_at.isoformat() if getattr(f, "deleted_at", None) else None,
     )
@@ -374,6 +381,7 @@ async def create_product(
             description=payload.description,
             price=payload.price,
             image_file_id=None,
+            min_quantity=payload.min_quantity,
         )
     except ValidationError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -394,6 +402,7 @@ async def update_product(
             description=payload.description,
             price=payload.price,
             is_available=payload.is_available,
+            min_quantity=payload.min_quantity,
         )
     except EntityNotFoundError:
         raise HTTPException(status_code=404, detail="Mahsulot topilmadi")

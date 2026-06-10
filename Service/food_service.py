@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
 from sqlalchemy.orm.exc import StaleDataError
 
 from Data.unit_of_work import UnitOfWork
+from Domain.constants import MAX_QUANTITY_PER_ITEM
 from Domain.models.food import Food
 from Service.exceptions import EntityNotFoundError, ValidationError
 
@@ -19,6 +20,26 @@ def _coerce_price(value) -> Decimal:
     if price <= 0:
         raise ValidationError("price_positive")
     return price.quantize(Decimal("0.01"))
+
+
+def _coerce_min_quantity(value) -> int:
+    """Per-mahsulot minimal buyurtma soni — 1..MAX_QUANTITY_PER_ITEM oralig'ida.
+
+    Noto'g'ri qiymat (matn, manfiy, 0, juda katta) — ValidationError.
+    """
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        raise ValidationError(
+            "food_min_qty_invalid",
+            context={"min": 1, "max": MAX_QUANTITY_PER_ITEM},
+        )
+    if n < 1 or n > MAX_QUANTITY_PER_ITEM:
+        raise ValidationError(
+            "food_min_qty_invalid",
+            context={"min": 1, "max": MAX_QUANTITY_PER_ITEM},
+        )
+    return n
 
 
 class FoodService:
@@ -65,16 +86,19 @@ class FoodService:
         description: str,
         price,
         image_file_id: Optional[str],
+        min_quantity: int = 1,
     ) -> Food:
         name = (name or "").strip()
         if len(name) < 2:
             raise ValidationError("name_short")
         price_dec = _coerce_price(price)
+        min_q = _coerce_min_quantity(min_quantity)
         async with UnitOfWork(self._sf) as uow:
             food = Food(
                 name=name,
                 description=(description or "").strip(),
                 price=price_dec,
+                min_quantity=min_q,
                 image_file_id=image_file_id,
                 is_available=True,
             )
@@ -89,6 +113,7 @@ class FoodService:
         price=None,
         image_file_id: Optional[str] = None,
         is_available: Optional[bool] = None,
+        min_quantity: Optional[int] = None,
     ) -> Food:
         async with UnitOfWork(self._sf) as uow:
             food = await uow.foods.get(food_id)
@@ -107,6 +132,8 @@ class FoodService:
                 food.image_file_id = image_file_id
             if is_available is not None:
                 food.is_available = is_available
+            if min_quantity is not None:
+                food.min_quantity = _coerce_min_quantity(min_quantity)
             try:
                 await uow.foods.add(food)
             except StaleDataError:
