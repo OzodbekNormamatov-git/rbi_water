@@ -26,6 +26,19 @@ def _local_tz():
         return timezone(timedelta(hours=5))
 
 
+def order_daily_label(order) -> str | None:
+    """Kunlik tartib raqami ("02") — kuryer xabarlari tepasida katta ko'rsatish uchun.
+
+    Kuryerlar soddaroq ishlaydi: to'liq "20260611-02" o'rniga ular kun davomida
+    "02" raqamiga qaraydi. `daily_number` NULL (eski order) bo'lsa None —
+    caller bu qatorni umuman ko'rsatmaydi.
+    """
+    daily = getattr(order, "daily_number", None)
+    if daily is None:
+        return None
+    return f"{int(daily):02d}"
+
+
 def order_display_number(order) -> str:
     """Buyurtma uchun odamlar ko'radigan raqam (string).
 
