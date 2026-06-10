@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from sqlalchemy import Boolean, Numeric
+from sqlalchemy import Boolean, Integer, Numeric
 from sqlalchemy.orm import Mapped, mapped_column
 
 from Domain.models.base import Base, TimestampMixin
@@ -40,4 +40,12 @@ class AppSettings(Base, TimestampMixin):
     # 1.00 = to'liq qoplash mumkin (mijoz balansi item summasidan katta bo'lsa).
     max_cashback_usage_ratio: Mapped[Decimal] = mapped_column(
         Numeric(5, 2), nullable=False, default=Decimal("1.00"),
+    )
+
+    # ---- Buyurtma config ----
+    # Minimal buyurtma soni — bitta buyurtmadagi mahsulotlar umumiy miqdori
+    # shu sondan kam bo'lsa, buyurtma rad etiladi. Default 1 = cheklov yo'q.
+    # Admin kichik (kompaniyaga zararli) buyurtmalarni bloklash uchun oshiradi.
+    min_order_quantity: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1,
     )

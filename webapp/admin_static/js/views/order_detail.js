@@ -37,7 +37,7 @@ export async function renderOrderDetail(root, params) {
     <div class="detail-grid">
       <div class="card">
         <h3 class="card__title">Buyurtma</h3>
-        <div class="detail-row"><span class="detail-row__label">№</span><span class="detail-row__value">#${order.id}</span></div>
+        <div class="detail-row"><span class="detail-row__label">№</span><span class="detail-row__value">${escapeHtml(order.display_number || ("#" + order.id))}</span></div>
         <div class="detail-row"><span class="detail-row__label">Yaratilgan</span><span class="detail-row__value">${escapeHtml(fmtDate(order.created_at))}</span></div>
         <div class="detail-row"><span class="detail-row__label">Qabul qilindi</span><span class="detail-row__value">${escapeHtml(fmtDate(order.accepted_at))}</span></div>
         <div class="detail-row"><span class="detail-row__label">Yo'lda</span><span class="detail-row__value">${escapeHtml(fmtDate(order.delivering_at))}</span></div>
@@ -88,7 +88,7 @@ export async function renderOrderDetail(root, params) {
   const cancelBtn = document.getElementById("cancel");
   if (cancelBtn) {
     cancelBtn.addEventListener("click", async () => {
-      if (!confirm(`#${order.id} buyurtmasi bekor qilinsinmi?`)) return;
+      if (!confirm(`${order.display_number || ("#" + order.id)} buyurtmasi bekor qilinsinmi?`)) return;
       try {
         await api.cancelOrder(order.id);
         toast("Bekor qilindi", "success");

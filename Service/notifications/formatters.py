@@ -9,6 +9,7 @@ from typing import Optional
 
 from Domain.enums import OrderStatus
 from Domain.models.order import Order
+from Service.order_display import order_display_number
 
 
 # Toshkent vaqti — config'dan o'qish kerak edi, lekin formatter sof funksiya bo'lib
@@ -59,7 +60,7 @@ def format_group_new(order: Order) -> str:
     if getattr(order, "created_by_operator_id", None):
         operator_badge = f"  <i>(📞 operator orqali)</i>"
     return (
-        f"<b>🆕 Yangi buyurtma #{order.id}</b>{operator_badge}\n"
+        f"<b>🆕 Yangi buyurtma {order_display_number(order)}</b>{operator_badge}\n"
         f"Mijoz: {order.customer.full_name}\n"
         f"📍 Manzil: <a href='{maps_link(order.delivery_latitude, order.delivery_longitude)}'>"
         f"xaritada ko'rish</a> (lokatsiya pastda)\n"
@@ -73,7 +74,7 @@ def format_group_claimed(order: Order) -> str:
     """Kuryerlar guruhi: claim'dan keyin — faqat status."""
     courier = order.courier.full_name if order.courier else "Kuryer"
     return (
-        f"<b>✅ Buyurtma #{order.id}</b>\n"
+        f"<b>✅ Buyurtma {order_display_number(order)}</b>\n"
         f"<b>{courier}</b> tomonidan olindi.\n"
         f"Davomi shaxsiy chatda."
     )
@@ -84,7 +85,7 @@ def format_group_claimed(order: Order) -> str:
 def format_dm_for_courier(order: Order) -> str:
     """Kuryerga DM da yuboriladigan to'liq ma'lumot — har transitsiyada qayta tahrirlanadi."""
     lines = [
-        f"<b>Buyurtma #{order.id}</b>",
+        f"<b>Buyurtma {order_display_number(order)}</b>",
         f"Holati: <b>{order.status.label_uz}</b>",
         "",
         f"👤 Mijoz: {order.customer.full_name}",
@@ -106,7 +107,7 @@ def format_dm_for_courier(order: Order) -> str:
 
 def format_customer_timeline(order: Order, brand_name: str) -> str:
     """Mijoz DM da yagona xabar — har transitsiyada o'sib boruvchi timeline."""
-    head = f"<b>📦 Buyurtma #{order.id}</b>"
+    head = f"<b>📦 Buyurtma {order_display_number(order)}</b>"
     status_line = f"Holat: <b>{order.status.label_uz}</b>"
 
     timeline: list[str] = []
@@ -240,7 +241,7 @@ def format_customer_arrived(order: Order) -> str:
                 f'\n📞 <a href="tel:{courier.phone_number}">{courier.phone_number}</a>'
             )
     return (
-        f"🔔 <b>Buyurtmangiz #{order.id} yetib keldi!</b>\n"
+        f"🔔 <b>Buyurtmangiz {order_display_number(order)} yetib keldi!</b>\n"
         f"Iltimos, kuryerni qarshi oling."
         f"{courier_part}"
     )
@@ -275,7 +276,7 @@ def format_courier_confirmation(order: Order, currency: str = "so'm") -> str:
     )
 
     return (
-        f"<b>📋 Buyurtma #{order.id} — yakuniy tasdiq</b>\n\n"
+        f"<b>📋 Buyurtma {order_display_number(order)} — yakuniy tasdiq</b>\n\n"
         f"📦 <b>Mahsulotni topshiraman:</b>\n{items_lines}\n\n"
         f"{cash_block}\n\n"
         f"{bottles_block}\n\n"

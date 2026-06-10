@@ -68,6 +68,14 @@ class Order(Base, TimestampMixin, SoftDeleteMixin):
     contact_phone: Mapped[str] = mapped_column(String(20), nullable=False)
     note: Mapped[str] = mapped_column(Text, default="", nullable=False)
 
+    # Kunlik buyurtma raqami — har kuni (Toshkent vaqti 00:00) 1 dan boshlanadi.
+    # `id` (global, ++) DAN FARQLI — bu odamlar ko'radigan qisqa raqam.
+    # Yaratilganda atomik counter (daily_order_counters) orqali beriladi.
+    # NULL: eski (migration'gacha) buyurtmalar — display'da `#id` ga fallback.
+    # `daily_number` o'zi unique EMAS (har kuni qaytadan 1) — sana bilan birga
+    # global unique (display: "YYYYMMDD-NN").
+    daily_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     # Idempotency: mijoz UUID/timestamp yuboradi. (customer_id, key) noyob
     # — bir xil kalit bilan qayta yuborish yangi buyurtma yaratmaydi.
     idempotency_key: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)

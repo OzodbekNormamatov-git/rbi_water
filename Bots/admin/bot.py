@@ -42,6 +42,7 @@ from Service.courier_service import CourierService
 from Service.exceptions import DomainError, ValidationError
 from Service.food_service import FoodService
 from Service.notification_service import NotificationService
+from Service.order_display import order_display_number
 from Service.order_service import CartItem, NewOrderInput, OrderService
 from Service.user_service import UserService
 
@@ -77,6 +78,12 @@ def _courier_card_text(courier: Courier, *, today: int, month: int, year: int, t
         f"<a href='tel:{courier.phone_number}'>{courier.phone_number}</a>"
         if courier.phone_number else "<i>kiritilmagan</i>"
     )
+    cash = courier.cash_balance or 0
+    cash_line = (
+        f"\n\n💵 <b>Qo'lidagi naqd:</b> {fmt_money(cash)} "
+        f"<i>(hali topshirilmagan)</i>"
+        if cash and float(cash) > 0 else ""
+    )
     return (
         f"<b>{courier.full_name}</b>\n"
         f"Username: {username}\n"
@@ -89,6 +96,7 @@ def _courier_card_text(courier: Courier, *, today: int, month: int, year: int, t
         f"• Shu oyda: <b>{month}</b>\n"
         f"• Shu yilda: <b>{year}</b>\n"
         f"• Hammasi: <b>{total}</b>"
+        f"{cash_line}"
     )
 
 
@@ -628,7 +636,7 @@ def build_admin_dispatcher(
 
         await state.clear()
         await cb.message.answer(
-            f"✅ <b>Buyurtma #{order.id} yaratildi</b>\n"
+            f"✅ <b>Buyurtma {order_display_number(order)} yaratildi</b>\n"
             f"💵 Jami: {fmt_money(order.total_amount)} (naqd)\n"
             f"🚗 Kuryerlar guruhiga yuborildi.",
             reply_markup=_role_kb(cb.from_user.id),
@@ -1004,7 +1012,7 @@ def build_admin_dispatcher(
         for o in orders:
             created = o.created_at.strftime("%d.%m.%Y %H:%M") if o.created_at else "—"
             blocks.append(
-                f"\n🆔 <b>#{o.id}</b>\n"
+                f"\n🆔 <b>{order_display_number(o)}</b>\n"
                 f"👤 Mijoz: {o.customer.full_name}\n"
                 f"📞 Telefon: <code>{o.contact_phone}</code>\n"
                 f"💵 Jami: {fmt_money(o.total_amount)}\n"

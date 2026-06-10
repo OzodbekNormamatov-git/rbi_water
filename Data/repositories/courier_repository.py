@@ -25,6 +25,25 @@ class CourierRepository(BaseRepository[Courier]):
         )
         return res.scalar_one_or_none()
 
+    async def get_for_update(self, courier_id: int) -> Optional[Courier]:
+        """Pessimistic row-lock — naqd balansni atomik yangilash uchun (settle)."""
+        res = await self._session.execute(
+            select(Courier).where(Courier.id == courier_id).with_for_update()
+        )
+        return res.scalar_one_or_none()
+
+    async def total_cash_outstanding(self) -> tuple[float, int]:
+        """Barcha (aktiv) kuryerlar qo'lidagi jami naqd + naqdi bor kuryerlar soni."""
+        stmt = self._active_only(
+            select(
+                func.coalesce(func.sum(Courier.cash_balance), 0),
+                func.count(Courier.id),
+            ).where(Courier.cash_balance > 0)
+        )
+        res = await self._session.execute(stmt)
+        row = res.first()
+        return float(row[0] or 0), int(row[1] or 0)
+
     async def list_active(self) -> Sequence[Courier]:
         """Aktiv (arxivlanmagan) + is_active=True — kuryer guruh notification uchun."""
         stmt = self._active_only(

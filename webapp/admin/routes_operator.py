@@ -25,6 +25,7 @@ from Service.exceptions import (
     DomainError, EntityNotFoundError, InvalidOperationError, ValidationError,
 )
 from Service.notification_service import NotificationService
+from Service.order_display import order_display_number
 from Service.order_service import CartItem, NewOrderInput, OrderService
 from Service.user_service import UserService
 from webapp.admin.auth import operator_required
@@ -78,6 +79,7 @@ class OperatorOrderIn(BaseModel):
 class OperatorOrderOut(BaseModel):
     """Yaratilgan buyurtmaning qisqacha info'si (operator UI uchun)."""
     id: int
+    display_number: str
     status: str
     total_amount: Decimal
     customer_id: int
@@ -187,6 +189,7 @@ async def create_operator_order(
 
     return OperatorOrderOut(
         id=order.id,
+        display_number=order_display_number(order),
         status=order.status.name,
         total_amount=order.total_amount,
         customer_id=customer.id,

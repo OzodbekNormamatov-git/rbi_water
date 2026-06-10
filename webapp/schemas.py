@@ -96,6 +96,11 @@ class OrderItemOut(BaseModel):
 
 class OrderOut(BaseModel):
     id: int
+    # Kunlik raqam (har kuni 1 dan) — NULL bo'lsa eski buyurtma.
+    daily_number: Optional[int] = None
+    # Ko'rsatish uchun tayyor string: "YYYYMMDD-NN" yoki eski "#id" (fallback).
+    # Frontend shuni to'g'ridan-to'g'ri ko'rsatadi — formatlash backend'da.
+    display_number: str
     status: str
     status_label: str
     total_amount: Decimal

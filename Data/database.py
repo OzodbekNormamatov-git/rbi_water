@@ -133,6 +133,33 @@ _MIGRATIONS: tuple[str, ...] = (
     # ------ v9: Kuryer telefon raqami ------
     # NULL: hali kiritilmagan (eski kuryerlar). Mijoz va admin ko'radi.
     "ALTER TABLE couriers ADD COLUMN IF NOT EXISTS phone_number VARCHAR(20)",
+
+    # ------ v10: Kunlik buyurtma raqami ------
+    # Order.daily_number — har kuni 1 dan boshlanadigan, odamlar ko'radigan raqam.
+    # NULL: eski buyurtmalar (display'da #id ga fallback).
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS daily_number INTEGER",
+    # Atomik counter jadval — har kun bitta qator (Toshkent sanasi).
+    """CREATE TABLE IF NOT EXISTS daily_order_counters (
+        day DATE PRIMARY KEY,
+        last_number INTEGER NOT NULL DEFAULT 0
+    )""",
+
+    # ------ v11: Minimal buyurtma soni ------
+    # AppSettings.min_order_quantity — default 1 (cheklov yo'q).
+    "ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS min_order_quantity INTEGER NOT NULL DEFAULT 1",
+
+    # ------ v12: Kuryer naqd pul balansi ------
+    # Courier.cash_balance — kuryer qo'lidagi naqd (DELIVERED'da += total_amount).
+    "ALTER TABLE couriers ADD COLUMN IF NOT EXISTS cash_balance NUMERIC(12,2) NOT NULL DEFAULT 0",
+    # CHECK — naqd balans manfiy bo'lmasin (settle balansdan oshmaydi).
+    """DO $$ BEGIN
+       IF NOT EXISTS (
+         SELECT 1 FROM pg_constraint WHERE conname = 'ck_couriers_cash_nonneg'
+       ) THEN
+         ALTER TABLE couriers ADD CONSTRAINT ck_couriers_cash_nonneg
+           CHECK (cash_balance >= 0);
+       END IF;
+       END $$""",
 )
 
 

@@ -1,11 +1,12 @@
 import { api } from "../api.js";
-import { fmtCount, escapeHtml } from "../format.js";
+import { fmtCount, fmtMoney, escapeHtml } from "../format.js";
 import { toast } from "../toast.js";
 
 const PAGE_SIZE = 50;
 
 export async function renderCouriers(root) {
   root.innerHTML = `
+    <div id="cashSummary"></div>
     <div class="toolbar" style="flex-wrap:wrap;gap:10px;margin-bottom:8px">
       <h2 style="margin:0;font-size:16px">Kuryerlar</h2>
       <div class="muted" id="totalLabel" style="font-size:12px"></div>
@@ -18,15 +19,16 @@ export async function renderCouriers(root) {
             <th>Ism</th>
             <th class="hide-narrow">Username</th>
             <th>Telefon</th>
+            <th style="text-align:right">Naqd pul</th>
             <th class="hide-narrow">Bot</th>
             <th class="hide-narrow">Bugun</th>
             <th class="hide-narrow">Oyda</th>
-            <th>Jami</th>
+            <th class="hide-narrow">Jami</th>
             <th>Holat</th>
             <th></th>
           </tr>
         </thead>
-        <tbody id="tbody"><tr><td colspan="10" class="loading">Yuklanmoqda…</td></tr></tbody>
+        <tbody id="tbody"><tr><td colspan="11" class="loading">Yuklanmoqda…</td></tr></tbody>
       </table>
     </div>
     <div id="loadMoreWrap" style="margin-top:12px;text-align:center"></div>
@@ -35,6 +37,27 @@ export async function renderCouriers(root) {
   const tbody = document.getElementById("tbody");
   const totalLabel = document.getElementById("totalLabel");
   const loadMoreWrap = document.getElementById("loadMoreWrap");
+  const cashSummary = document.getElementById("cashSummary");
+
+  // Kuryerlarda jami naqd — yuqorida KPI sifatida
+  async function loadCashSummary() {
+    try {
+      const s = await api.couriersCashSummary();
+      cashSummary.innerHTML = `
+        <div class="kpi-grid" style="margin-bottom:14px">
+          <div class="kpi">
+            <div class="kpi__icon">💵</div>
+            <div class="kpi__label">Kuryerlarda jami naqd</div>
+            <div class="kpi__value">${fmtMoney(s.total_cash)}</div>
+            <div class="kpi__sub">${fmtCount(s.couriers_with_cash)} kuryerda · hali topshirilmagan</div>
+          </div>
+        </div>
+      `;
+    } catch (_) {
+      cashSummary.innerHTML = "";
+    }
+  }
+  loadCashSummary();
 
   let cache = [];
   let offset = 0;
@@ -50,9 +73,17 @@ export async function renderCouriers(root) {
     return `<span class="muted">— kiritilmagan</span>`;
   }
 
+  function renderCashCell(c) {
+    const cash = Number(c.cash_balance || 0);
+    if (cash > 0) {
+      return `<b style="color:var(--brand-deep)">${fmtMoney(cash)}</b>`;
+    }
+    return `<span class="muted">—</span>`;
+  }
+
   function renderRows() {
     if (!cache.length) {
-      tbody.innerHTML = `<tr><td colspan="10" class="empty"><div class="empty__icon">🚗</div><div class="empty__text">Hozircha kuryer yo'q.</div></td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="11" class="empty"><div class="empty__icon">🚗</div><div class="empty__text">Hozircha kuryer yo'q.</div></td></tr>`;
       loadMoreWrap.innerHTML = "";
       totalLabel.textContent = "";
       return;
@@ -63,10 +94,11 @@ export async function renderCouriers(root) {
         <td><b>${escapeHtml(c.full_name)}</b></td>
         <td class="hide-narrow">${c.username ? '@' + escapeHtml(c.username) : '<span class="muted">—</span>'}</td>
         <td>${renderPhoneCell(c)}</td>
+        <td style="text-align:right">${renderCashCell(c)}</td>
         <td class="hide-narrow">${c.has_started_bot ? "✅" : '<span class="muted">❌</span>'}</td>
         <td class="hide-narrow" style="text-align:right">${fmtCount(c.delivered_today)}</td>
         <td class="hide-narrow" style="text-align:right">${fmtCount(c.delivered_month)}</td>
-        <td style="text-align:right"><b>${fmtCount(c.delivered_total)}</b></td>
+        <td class="hide-narrow" style="text-align:right"><b>${fmtCount(c.delivered_total)}</b></td>
         <td><span class="pill pill--${c.is_active ? 'active' : 'inactive'}">${c.is_active ? "Aktiv" : "Noaktiv"}</span></td>
         <td>
           <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
@@ -126,13 +158,14 @@ export async function renderCouriers(root) {
       total = Number(page.total || 0);
       renderRows();
     } catch (e) {
-      tbody.innerHTML = `<tr><td colspan="10" class="empty"><div class="empty__icon">⚠️</div><div class="empty__text">${escapeHtml(e.message)}</div></td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="11" class="empty"><div class="empty__icon">⚠️</div><div class="empty__text">${escapeHtml(e.message)}</div></td></tr>`;
     } finally {
       loading = false;
     }
   }
 
   function reload() {
+    loadCashSummary();
     cache = [];
     offset = 0;
     loadPage(true);
@@ -173,6 +206,32 @@ function openEditModal(courier, onSaved) {
             <span class="switch__slider"></span>
           </label>
         </div>
+
+        <label class="label" style="margin-top:14px">Naqd pul (qo'lida)</label>
+        <div class="card" style="background:var(--surface-2);padding:12px">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <span class="muted">Hozir kuryerda</span>
+            <b style="font-size:18px;color:var(--brand-deep)" id="cu-cash">${fmtMoney(courier.cash_balance || 0)}</b>
+          </div>
+          ${Number(courier.cash_balance || 0) > 0 ? `
+            <div style="margin-top:10px">
+              <label class="label" style="margin-top:0">Qabul qilinadigan summa</label>
+              <div style="display:flex;gap:8px;align-items:center">
+                <input class="input" id="cu-settle-amount" type="number" min="0" step="1000"
+                       value="${Number(courier.cash_balance || 0)}" style="flex:1" />
+                <span class="muted">so'm</span>
+              </div>
+              <div class="muted" style="font-size:12px;margin-top:4px">
+                Kuryer pulni topshirganda bosing. To'liq summa yoki qisman.
+              </div>
+              <button class="btn btn--success" id="cu-settle" type="button" style="width:100%;margin-top:8px">
+                ✅ Pulni qabul qildim
+              </button>
+            </div>
+          ` : `
+            <div class="muted" style="font-size:12px;margin-top:6px">Kuryerda hozir naqd pul yo'q.</div>
+          `}
+        </div>
       </div>
       <div class="modal__foot">
         <button class="btn btn--secondary" data-close>Bekor</button>
@@ -184,6 +243,32 @@ function openEditModal(courier, onSaved) {
   const close = () => backdrop.remove();
   backdrop.querySelectorAll("[data-close]").forEach((b) => b.addEventListener("click", close));
   backdrop.addEventListener("click", (e) => { if (e.target === backdrop) close(); });
+
+  // ----- Naqd pulni qabul qilish (settle)
+  const settleBtn = document.getElementById("cu-settle");
+  if (settleBtn) {
+    settleBtn.addEventListener("click", async () => {
+      const balance = Number(courier.cash_balance || 0);
+      const amt = Math.floor(Number(document.getElementById("cu-settle-amount").value) || 0);
+      if (amt <= 0) return toast("Summani kiriting", "error");
+      if (amt > balance) return toast(`Kuryerda atigi ${fmtMoney(balance)} bor`, "error");
+      const full = amt >= balance;
+      if (!confirm(`${escapeHtml(courier.full_name)}dan ${fmtMoney(amt)} naqd qabul qilindimi?`)) return;
+      settleBtn.disabled = true;
+      settleBtn.textContent = "Saqlanmoqda…";
+      try {
+        // Full settle → amount yubormaymiz (server hammasini oladi); qisman → amount.
+        await api.settleCourierCash(courier.id, full ? null : amt);
+        toast(`${fmtMoney(amt)} qabul qilindi`, "success");
+        close();
+        onSaved && onSaved();
+      } catch (e) {
+        toast(e.message, "error");
+        settleBtn.disabled = false;
+        settleBtn.textContent = "✅ Pulni qabul qildim";
+      }
+    });
+  }
 
   document.getElementById("cu-save").addEventListener("click", async () => {
     const phoneRaw = document.getElementById("cu-phone").value.trim();

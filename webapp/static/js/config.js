@@ -18,6 +18,7 @@ export const DEFAULTS = {
   max_quantity_per_item: 999,
   max_items_per_order: 50,
   max_note_length: 500,
+  min_order_quantity: 1,
   statuses: [],
 };
 

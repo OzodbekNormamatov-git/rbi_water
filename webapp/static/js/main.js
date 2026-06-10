@@ -24,6 +24,7 @@ import { renderCheckout } from "./views/checkout.js";
 import { renderSuccess } from "./views/success.js";
 import { renderOrders } from "./views/orders.js";
 import { renderOrder } from "./views/order.js";
+import { renderReorder } from "./views/reorder.js";
 import { renderProfile } from "./views/profile.js";
 import { renderAddresses } from "./views/addresses.js";
 
@@ -54,6 +55,7 @@ register("product",      withoutTabbar(renderProduct));
 register("checkout",     withoutTabbar(renderCheckout));
 register("success",      withoutTabbar(renderSuccess));
 register("order",        withoutTabbar(renderOrder));
+register("reorder",      withoutTabbar(renderReorder));
 register("addresses",    withoutTabbar(renderAddresses));
 
 async function bootstrap() {

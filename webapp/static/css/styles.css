@@ -699,6 +699,19 @@ body.no-tabbar .cta-bar { bottom: var(--safe-bottom); }
   box-shadow: var(--shadow-md);
 }
 .tile + .tile { margin-top: 8px; }
+
+/* Aksent tile — "oxirgi buyurtmani takrorlash" kabi muhim tezkor harakat.
+   Brand tint fon + brand border bilan ajralib turadi. */
+.tile--accent {
+  background: var(--brand-tint);
+  border-color: var(--brand-primary);
+}
+.tile--accent .tile__icon {
+  background: var(--brand-primary);
+  color: var(--text-on-brand);
+}
+.tile--accent .tile__sub { color: var(--text-2); }
+
 .tile__icon {
   width: 46px;
   height: 46px;

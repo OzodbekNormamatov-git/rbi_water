@@ -22,7 +22,7 @@ function row(o) {
   return `
     <div class="order-row order-row--clickable" data-id="${o.id}" role="button" tabindex="0">
       <div class="order-row__head">
-        <div class="order-row__id">#${o.id}</div>
+        <div class="order-row__id">${escapeHtml(o.display_number || ("#" + o.id))}</div>
         ${statusPill(o.status, o.status_label)}
       </div>
       <div class="order-row__total">${fmtMoney(o.total_amount)}</div>

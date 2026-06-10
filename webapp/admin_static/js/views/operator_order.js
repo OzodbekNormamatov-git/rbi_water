@@ -435,7 +435,7 @@ export async function renderOperatorOrder(root) {
         cashback_to_use: cashbackToUse,
         // bottles_returned — yetkazganda kuryer kiritadi
       });
-      toast(`✅ Buyurtma #${res.id} yaratildi — kuryerlarga yuborildi`, "success");
+      toast(`✅ Buyurtma ${res.display_number || ("#" + res.id)} yaratildi — kuryerlarga yuborildi`, "success");
       // Formni tozalaymiz, lekin sahifani qaytadan render qilamiz
       setTimeout(() => renderOperatorOrder(root), 800);
     } catch (e) {

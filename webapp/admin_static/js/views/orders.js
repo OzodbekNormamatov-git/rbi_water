@@ -61,7 +61,7 @@ export async function renderOrders(root, params) {
   function rowsHtml(rows) {
     return rows.map((o) => `
       <tr class="clickable" data-id="${o.id}">
-        <td><b>#${o.id}</b></td>
+        <td><b>${escapeHtml(o.display_number || ("#" + o.id))}</b></td>
         <td class="hide-narrow">${escapeHtml(fmtDate(o.created_at))}</td>
         <td>${escapeHtml(o.customer.full_name)}</td>
         <td class="hide-narrow">${o.courier ? escapeHtml(o.courier.full_name) : '<span class="muted">—</span>'}</td>

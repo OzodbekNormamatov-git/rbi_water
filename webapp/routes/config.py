@@ -12,7 +12,8 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from Domain.enums import OrderStatus
-from webapp.deps import get_brand_name, telegram_user
+from Service.settings_service import SettingsService
+from webapp.deps import get_brand_name, get_settings_service, telegram_user
 from webapp.auth import TelegramUser
 
 router = APIRouter(prefix="/api/config", tags=["config"])
@@ -37,6 +38,9 @@ class ConfigOut(BaseModel):
     max_quantity_per_item: int
     max_items_per_order: int
     max_note_length: int
+    # Minimal buyurtma soni — admin belgilaydi (1 = cheklov yo'q). Frontend
+    # savatchada shu chegaradan past tushishni bloklaydi.
+    min_order_quantity: int = 1
     # Status katalogi — frontend timeline/pill rendiringi uchun
     statuses: List[StatusInfo]
 
@@ -59,6 +63,7 @@ def _all_statuses() -> List[StatusInfo]:
 async def get_config(
     _user: TelegramUser = Depends(telegram_user),
     brand: str = Depends(get_brand_name),
+    settings_service: SettingsService = Depends(get_settings_service),
 ) -> ConfigOut:
     from Domain.constants import (
         MAX_ITEMS_PER_ORDER,
@@ -67,6 +72,8 @@ async def get_config(
     )
     from config import get_settings
     settings = get_settings()
+    # Minimal buyurtma soni — admin live qiymati (DB'dan).
+    min_order = await settings_service.get_min_order_quantity()
     return ConfigOut(
         brand_name=brand,
         currency_symbol=settings.currency_symbol,
@@ -82,5 +89,6 @@ async def get_config(
         max_quantity_per_item=MAX_QUANTITY_PER_ITEM,
         max_items_per_order=MAX_ITEMS_PER_ORDER,
         max_note_length=MAX_NOTE_LENGTH,
+        min_order_quantity=min_order,
         statuses=_all_statuses(),
     )

@@ -1,13 +1,15 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional, Sequence
 
 from sqlalchemy import and_, case as sa_case_when, func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import selectinload
 
 from Data.repositories.base import BaseRepository
 from Domain.enums import OrderStatus
+from Domain.models.daily_counter import DailyOrderCounter
 from Domain.models.order import Order, OrderItem
 
 
@@ -21,6 +23,31 @@ class OrderRepository(BaseRepository[Order]):
             selectinload(Order.customer),
             selectinload(Order.courier),
         )
+
+    async def next_daily_number(self, day: date) -> int:
+        """Berilgan kun uchun navbatdagi kunlik buyurtma raqamini ATOMIK qaytaradi.
+
+        PostgreSQL `INSERT ... ON CONFLICT DO UPDATE ... RETURNING` — bitta
+        statement'da race-safe:
+          * Kun uchun qator yo'q bo'lsa → yaratadi, 1 qaytaradi
+          * Bor bo'lsa → atomik +1 qiladi, yangisini qaytaradi
+
+        UoW tranzaksiyasi ichida chaqiriladi — order yaratish bilan birga
+        commit/rollback bo'ladi (to'liq xatoda raqam isrof bo'lmaydi).
+        Bir vaqtda kelgan ikki order hech qachon bir xil raqam olmaydi
+        (ON CONFLICT row lock).
+        """
+        stmt = (
+            pg_insert(DailyOrderCounter)
+            .values(day=day, last_number=1)
+            .on_conflict_do_update(
+                index_elements=[DailyOrderCounter.day],
+                set_={"last_number": DailyOrderCounter.last_number + 1},
+            )
+            .returning(DailyOrderCounter.last_number)
+        )
+        res = await self._session.execute(stmt)
+        return int(res.scalar_one())
 
     async def get_full(self, order_id: int) -> Optional[Order]:
         """Soft-deleted bo'lsa ham qaytaradi — admin tarix va restore uchun zarur."""

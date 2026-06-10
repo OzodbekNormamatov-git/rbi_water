@@ -42,6 +42,7 @@ from Domain.models.food import Food
 from Service.exceptions import DomainError, ValidationError
 from Service.food_service import FoodService
 from Service.notification_service import NotificationService
+from Service.order_display import order_display_number
 from Service.order_service import CartItem, NewOrderInput, OrderService
 from Service.user_service import RegistrationInput, UserService
 
@@ -155,7 +156,7 @@ def build_customer_dispatcher(
         lines = [header]
         for o in orders:
             lines.append(
-                f"#{o.id} — {fmt_money(o.total_amount)} — {o.status.label_uz}"
+                f"{order_display_number(o)} — {fmt_money(o.total_amount)} — {o.status.label_uz}"
             )
 
         nav: list[InlineKeyboardButton] = []

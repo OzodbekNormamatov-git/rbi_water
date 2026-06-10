@@ -13,6 +13,14 @@ MIN_QUANTITY_PER_ITEM: Final[int] = 1
 MAX_ITEMS_PER_ORDER: Final[int] = 50
 MAX_NOTE_LENGTH: Final[int] = 500
 
+# Minimal buyurtma soni (bitta buyurtmadagi mahsulotlar umumiy soni).
+# Default 1 — cheklov yo'q (har qanday buyurtma o'tadi). Admin AppSettings'da
+# kattaroq qiymat belgilab, kichik (zararli) buyurtmalarni bloklashi mumkin.
+# Live qiymat AppSettings.min_order_quantity'dan o'qiladi; bu — default seed.
+DEFAULT_MIN_ORDER_QUANTITY: Final[int] = 1
+# Admin belgilashi mumkin bo'lgan yuqori chegara (sanity cap).
+MAX_MIN_ORDER_QUANTITY: Final[int] = 1000
+
 # Telefon raqam regexi (xalqaro format)
 PHONE_REGEX: Final[str] = r"^\+?\d{9,15}$"
 

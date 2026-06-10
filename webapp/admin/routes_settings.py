@@ -28,6 +28,8 @@ class CashbackSettingsOut(BaseModel):
     cashback_enabled: bool
     cashback_percent: Decimal
     max_cashback_usage_ratio: Decimal
+    # Minimal buyurtma soni (1 = cheklov yo'q)
+    min_order_quantity: int = 1
 
 
 class CashbackSettingsIn(BaseModel):
@@ -36,6 +38,8 @@ class CashbackSettingsIn(BaseModel):
     cashback_percent: Optional[Decimal] = Field(default=None, ge=0, le=50)
     # 0..1 (0..100%); 1.0 = to'liq qoplash mumkin
     max_cashback_usage_ratio: Optional[Decimal] = Field(default=None, ge=0, le=1)
+    # Minimal buyurtma soni — 1..1000 (service'da validatsiya)
+    min_order_quantity: Optional[int] = Field(default=None, ge=1, le=1000)
 
 
 class CashbackOverviewOut(BaseModel):
@@ -70,10 +74,12 @@ async def get_settings(
     settings: SettingsService = Depends(_settings_service),
 ) -> CashbackSettingsOut:
     cfg = await settings.get_cashback_config()
+    min_order = await settings.get_min_order_quantity()
     return CashbackSettingsOut(
         cashback_enabled=cfg.enabled,
         cashback_percent=cfg.percent,
         max_cashback_usage_ratio=cfg.max_usage_ratio,
+        min_order_quantity=min_order,
     )
 
 
@@ -89,14 +95,18 @@ async def update_settings(
             percent=payload.cashback_percent,
             max_usage_ratio=payload.max_cashback_usage_ratio,
         )
+        if payload.min_order_quantity is not None:
+            await settings.set_min_order_quantity(payload.min_order_quantity)
     except ValidationError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except DomainError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    min_order = await settings.get_min_order_quantity()
     return CashbackSettingsOut(
         cashback_enabled=cfg.enabled,
         cashback_percent=cfg.percent,
         max_cashback_usage_ratio=cfg.max_usage_ratio,
+        min_order_quantity=min_order,
     )
 
 

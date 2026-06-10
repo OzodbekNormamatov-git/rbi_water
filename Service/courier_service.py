@@ -1,13 +1,18 @@
 from __future__ import annotations
 
 import re
+from decimal import Decimal, InvalidOperation
 from typing import Optional, Sequence
 
 from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
 
 from Data.unit_of_work import UnitOfWork
 from Domain.models.courier import Courier
-from Service.exceptions import EntityNotFoundError, ValidationError
+from Service.exceptions import (
+    EntityNotFoundError,
+    InvalidOperationError,
+    ValidationError,
+)
 
 # Telefon formati: 9-15 raqam, ixtiyoriy + prefiks (mavjud `UserService` bilan
 # bir xil pattern). `+998901234567` kabi E.164 saqlanadi.
@@ -124,6 +129,49 @@ class CourierService:
             courier.is_active = active
             await uow.couriers.add(courier)
             return courier
+
+    # ---------------------- Naqd pul (cash) ----------------------
+
+    async def settle_cash(
+        self, courier_id: int, amount: Optional[Decimal] = None,
+    ) -> Courier:
+        """Kuryer naqd pulni topshirdi — balansidan ayiramiz (admin "qabul qildim").
+
+        `amount=None` → to'liq balansni nolga tushiradi (hammasini topshirdi).
+        `amount` berilsa → shu summani ayiradi (qisman topshirish), balansdan oshmaydi.
+
+        Xatolar:
+          * EntityNotFound — kuryer yo'q
+          * ValidationError("cash_amount_invalid") — manfiy/noto'g'ri summa
+          * InvalidOperationError("cash_settle_exceeds") — balansdan ko'p
+        """
+        async with UnitOfWork(self._sf) as uow:
+            courier = await uow.couriers.get_for_update(courier_id)
+            if courier is None:
+                raise EntityNotFoundError("courier_not_registered")
+            balance = Decimal(courier.cash_balance or 0)
+            if amount is None:
+                take = balance  # hammasini topshirdi
+            else:
+                try:
+                    take = Decimal(str(amount))
+                except (InvalidOperation, TypeError, ValueError):
+                    raise ValidationError("cash_amount_invalid")
+                if take <= 0:
+                    raise ValidationError("cash_amount_invalid")
+                if take > balance:
+                    raise InvalidOperationError(
+                        "cash_settle_exceeds",
+                        context={"available": float(balance)},
+                    )
+            courier.cash_balance = (balance - take).quantize(Decimal("0.01"))
+            await uow.couriers.add(courier)
+            return courier
+
+    async def total_cash_outstanding(self) -> tuple[float, int]:
+        """Barcha kuryerlar qo'lidagi jami naqd + naqdi bor kuryerlar soni."""
+        async with UnitOfWork(self._sf) as uow:
+            return await uow.couriers.total_cash_outstanding()
 
     async def set_phone(self, courier_id: int, phone: Optional[str]) -> Courier:
         """Kuryer telefon raqamini yangilaydi (admin tomondan yoki kuryerning o'zi).

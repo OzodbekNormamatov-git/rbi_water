@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import TYPE_CHECKING, List
 
-from sqlalchemy import BigInteger, Boolean, String
+from sqlalchemy import BigInteger, Boolean, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from Domain.models.base import Base, SoftDeleteMixin, TimestampMixin
@@ -32,5 +33,14 @@ class Courier(Base, TimestampMixin, SoftDeleteMixin):
     is_active: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     # Telegram cheklovi: bot DM yubora olishi uchun foydalanuvchi avval botga /start yuborgan bo'lishi shart.
     has_started_bot: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    # Kuryer qo'lidagi NAQD pul — buyurtma DELIVERED bo'lganda mijozdan olingan
+    # `total_amount` shu balansga qo'shiladi. Kuryer pulni kompaniyaga topshirganda
+    # admin "qabul qildim" (settle) bilan kamaytiradi. Admin har kuryerda qancha
+    # naqd borligini ko'rib turadi (qancha pul "yo'lda" ekanini biladi).
+    # DB CHECK >= 0 — manfiy bo'la olmaydi (settle balansdan oshmaydi).
+    cash_balance: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False, default=Decimal("0.00"),
+    )
 
     orders: Mapped[List["Order"]] = relationship(back_populates="courier", lazy="selectin")

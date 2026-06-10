@@ -10,6 +10,7 @@ import {
 import { go } from "../router.js";
 import { toast } from "../toast.js";
 import { showCTA, hideCTA } from "../cta.js";
+import { getConfig } from "../config.js";
 
 export function renderCart(root) {
   document.getElementById("screen-title").textContent = "Savatcha";
@@ -36,12 +37,22 @@ export function renderCart(root) {
   const total = () =>
     products.reduce((sum, p) => sum + Number(p.price) * cart.qty(p.id), 0);
 
+  const minOrder = () => Math.max(1, Number(getConfig().min_order_quantity || 1));
+
   const updateCTA = () => {
     if (cart.isEmpty()) {
       hideCTA();
       return;
     }
-    showCTA(`Buyurtma berish · ${fmtMoney(total())}`, () => go("checkout"));
+    const count = cart.totalCount();
+    const min = minOrder();
+    if (count < min) {
+      // Minimal buyurtma chegarasiga yetmagan — CTA bloklanadi.
+      const need = min - count;
+      showCTA(`Yana ${need} ta qo'shing (min. ${min})`, () => {}, { disabled: true });
+    } else {
+      showCTA(`Buyurtma berish · ${fmtMoney(total())}`, () => go("checkout"));
+    }
   };
 
   const renderRows = () => {
@@ -58,6 +69,18 @@ export function renderCart(root) {
     }
 
     const items = products.filter((p) => cart.qty(p.id) > 0);
+
+    // Minimal buyurtma ogohlantirishi (chegaraga yetmagan bo'lsa).
+    const _count = cart.totalCount();
+    const _min = minOrder();
+    const minNoticeHtml = _count < _min
+      ? `<div class="card" style="margin-top:10px;border-color:var(--brand-warning);background:var(--brand-tint)">
+           <div style="font-size:13px;color:var(--brand-warning-strong)">
+             ⚠️ Minimal buyurtma: <b>${_min} dona</b>. Yana <b>${_min - _count} ta</b> qo'shing.
+           </div>
+         </div>`
+      : "";
+
     root.innerHTML = `
       <div class="cart-list">
         ${items.map((p) => {
@@ -81,6 +104,8 @@ export function renderCart(root) {
         }).join("")}
       </div>
 
+      ${minNoticeHtml}
+
       <div class="summary">
         <div class="summary__label">Jami</div>
         <div class="summary__value">${fmtMoney(total())}</div>
@@ -95,9 +120,20 @@ export function renderCart(root) {
       row.querySelectorAll(".cart-row__btn").forEach((btn) => {
         btn.addEventListener("click", (ev) => {
           ev.stopPropagation();
-          hapticImpact("light");
-          if (btn.dataset.act === "inc") cart.inc(id);
-          else cart.dec(id);
+          if (btn.dataset.act === "inc") {
+            hapticImpact("light");
+            cart.inc(id);
+          } else {
+            // Minimal buyurtma chegarasidan past tushishni bloklaymiz.
+            // (Savatchani butunlay tozalash "🗑" tugmasi orqali mumkin.)
+            const min = minOrder();
+            if (cart.totalCount() <= min && min > 1) {
+              toast(`Minimal buyurtma: ${min} dona. Kamaytirib bo'lmaydi.`, { error: true });
+              return;
+            }
+            hapticImpact("light");
+            cart.dec(id);
+          }
         });
       });
     });

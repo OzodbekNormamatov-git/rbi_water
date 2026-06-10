@@ -32,6 +32,7 @@ export function renderHome(root) {
     </div>
 
     <div id="active-area"></div>
+    <div id="reorder-area"></div>
     <div id="cart-area"></div>
 
     <div class="section-title">Tezkor</div>
@@ -57,6 +58,7 @@ export function renderHome(root) {
   root.querySelector("#goOrders").addEventListener("click", () => reset("orders"));
 
   const activeArea = root.querySelector("#active-area");
+  const reorderArea = root.querySelector("#reorder-area");
   const cartArea = root.querySelector("#cart-area");
 
   // ----- Cart preview
@@ -88,35 +90,69 @@ export function renderHome(root) {
     } catch (_) { /* silent */ }
   })();
 
-  // ----- Active orders
+  // ----- Active orders + "oxirgi buyurtmani takrorlash" (bitta fetch)
   (async () => {
     try {
       const ordersRes = await api.myOrders();
       const orders = Array.isArray(ordersRes) ? ordersRes : (ordersRes.items || []);
+
+      // Jarayondagi buyurtmalar
       const active = orders.filter((o) => ACTIVE_STATUSES.has(o.status));
-      if (!active.length) { activeArea.innerHTML = ""; return; }
-      activeArea.innerHTML = `
-        <div class="section-title">Jarayondagi buyurtmalar</div>
-        ${active.map((o) => `
-          <div class="tile" data-id="${o.id}">
-            <div class="tile__icon">🚗</div>
-            <div class="tile__main">
-              <div class="tile__title">Buyurtma #${o.id} · ${fmtMoney(o.total_amount)}</div>
-              <div class="tile__sub">${statusPill(o.status, o.status_label)}</div>
+      if (active.length) {
+        activeArea.innerHTML = `
+          <div class="section-title">Jarayondagi buyurtmalar</div>
+          ${active.map((o) => `
+            <div class="tile" data-id="${o.id}">
+              <div class="tile__icon">🚗</div>
+              <div class="tile__main">
+                <div class="tile__title">Buyurtma ${escapeHtml(o.display_number || ("#" + o.id))} · ${fmtMoney(o.total_amount)}</div>
+                <div class="tile__sub">${statusPill(o.status, o.status_label)}</div>
+              </div>
+              <div class="tile__chev">›</div>
             </div>
-            <div class="tile__chev">›</div>
-          </div>
-        `).join("")}
-      `;
-      activeArea.querySelectorAll(".tile").forEach((el) => {
-        const orderId = Number(el.getAttribute("data-id"));
-        el.addEventListener("click", () => go("order", { orderId }));
-      });
+          `).join("")}
+        `;
+        activeArea.querySelectorAll(".tile").forEach((el) => {
+          const orderId = Number(el.getAttribute("data-id"));
+          el.addEventListener("click", () => go("order", { orderId }));
+        });
+      } else {
+        activeArea.innerHTML = "";
+      }
+
+      // Oxirgi buyurtmani takrorlash — eng so'nggi buyurtma (har qanday holatda)
+      renderReorderCard(orders[0]);
     } catch (e) {
       // Sokin xato — bosh sahifani buzmaymiz, faqat sektor bo'sh.
       activeArea.innerHTML = "";
+      reorderArea.innerHTML = "";
     }
   })();
+
+  function renderReorderCard(last) {
+    if (!last || !Array.isArray(last.items) || !last.items.length) {
+      reorderArea.innerHTML = "";
+      return;
+    }
+    // Qisqacha tarkib: "Suv 19L × 2, Stakan × 1" (uzun bo'lsa kesiladi)
+    const itemsShort = last.items
+      .map((it) => `${it.food_name} × ${it.quantity}`)
+      .join(", ");
+    reorderArea.innerHTML = `
+      <div class="section-title">Tezkor takror</div>
+      <div class="tile tile--accent" id="reorderTile">
+        <div class="tile__icon">🔁</div>
+        <div class="tile__main">
+          <div class="tile__title">Oxirgi buyurtmani takrorlash</div>
+          <div class="tile__sub">${escapeHtml(itemsShort)} · ${fmtMoney(last.total_amount)}</div>
+        </div>
+        <div class="tile__chev">›</div>
+      </div>
+    `;
+    reorderArea.querySelector("#reorderTile").addEventListener("click", () => {
+      go("reorder", { orderId: last.id });
+    });
+  }
 
   return () => { if (unsub) unsub(); };
 }

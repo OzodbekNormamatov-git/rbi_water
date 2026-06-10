@@ -95,7 +95,7 @@ function renderCourier(order) {
 }
 
 export function renderOrder(root, { orderId }) {
-  document.getElementById("screen-title").textContent = `Buyurtma #${orderId}`;
+  document.getElementById("screen-title").textContent = "Buyurtma";
   showBackButton(() => back());
   hideMainButton();
   hideCTA();
@@ -105,6 +105,10 @@ export function renderOrder(root, { orderId }) {
   (async () => {
     try {
       const order = await api.order(orderId);
+
+      // Sarlavhani kunlik raqam bilan yangilaymiz (backend tayyor string beradi).
+      const num = order.display_number || `#${order.id}`;
+      document.getElementById("screen-title").textContent = `Buyurtma ${num}`;
 
       const itemsHtml = (order.items || []).map((it) => `
         <div class="order-item">
@@ -117,7 +121,7 @@ export function renderOrder(root, { orderId }) {
         <div class="order-detail__head">
           <div>
             <div class="muted" style="font-size:13px">Buyurtma</div>
-            <div style="font-size:22px;font-weight:700">#${order.id}</div>
+            <div style="font-size:22px;font-weight:700">${escapeHtml(num)}</div>
           </div>
           ${statusPill(order.status, order.status_label)}
         </div>

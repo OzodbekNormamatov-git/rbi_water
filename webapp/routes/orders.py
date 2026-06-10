@@ -20,6 +20,7 @@ from Service.exceptions import (
     ValidationError,
 )
 from Service.notification_service import NotificationService
+from Service.order_display import order_display_number
 from Service.order_service import (
     CartItem,
     NewOrderInput,
@@ -56,6 +57,8 @@ def _common_fields(order) -> dict:
     """OrderOut va OrderDetailOut o'rtasidagi umumiy field'lar."""
     return {
         "id": order.id,
+        "daily_number": getattr(order, "daily_number", None),
+        "display_number": order_display_number(order),
         "status": order.status.name,
         "status_label": order.status.label_uz,
         "total_amount": order.total_amount,

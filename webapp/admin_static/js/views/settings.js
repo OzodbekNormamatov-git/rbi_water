@@ -49,6 +49,28 @@ export async function renderSettings(root) {
       </div>
     </div>
 
+    <div class="charts-grid" style="grid-template-columns: 1fr">
+      <div class="card">
+        <h3 class="card__title">Buyurtma sozlamalari</h3>
+        <div class="settings-row" style="border-bottom:0">
+          <div class="settings-row__label">
+            <div class="settings-row__title">Minimal buyurtma soni</div>
+            <div class="settings-row__hint">
+              Bitta buyurtmadagi mahsulotlar umumiy soni shu chegaradan kam bo'lsa, mijoz buyurtma bera olmaydi.
+              <b>1</b> = cheklov yo'q. Kichik (yetkazib berishga zararli) buyurtmalarni bloklash uchun oshiring.
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <input class="input" id="min-order" type="number" min="1" max="1000" step="1" style="max-width:120px" />
+            <span class="muted">dona</span>
+          </div>
+        </div>
+        <div style="text-align:right;margin-top:12px">
+          <button class="btn" id="saveMinBtn" type="button">Saqlash</button>
+        </div>
+      </div>
+    </div>
+
     <div class="charts-grid" style="grid-template-columns: 1fr 1fr">
       <div class="card">
         <h3 class="card__title">Tarixiy keshbek aylanmasi</h3>
@@ -76,6 +98,7 @@ export async function renderSettings(root) {
     root.querySelector("#cb-enabled").checked = !!cfg.cashback_enabled;
     root.querySelector("#cb-percent").value = Number(cfg.cashback_percent);
     root.querySelector("#cb-ratio").value = Math.round(Number(cfg.max_cashback_usage_ratio) * 100);
+    root.querySelector("#min-order").value = Number(cfg.min_order_quantity || 1);
 
     // KPIs — moliyaviy ko'rinish
     root.querySelector("#cashbackKpis").innerHTML = `
@@ -161,6 +184,25 @@ export async function renderSettings(root) {
         max_cashback_usage_ratio: ratio,
       });
       toast("Sozlamalar saqlandi");
+      await reload();
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : "Xatolik";
+      toast(msg, { error: true });
+    }
+  });
+
+  // Minimal buyurtma soni — alohida saqlash (cashback'dan mustaqil)
+  root.querySelector("#saveMinBtn").addEventListener("click", async (e) => {
+    e.preventDefault();
+    const minOrder = Math.floor(Number(root.querySelector("#min-order").value));
+    if (!Number.isFinite(minOrder) || minOrder < 1 || minOrder > 1000) {
+      return toast("Minimal buyurtma 1..1000 oralig'ida bo'lishi shart", { error: true });
+    }
+    try {
+      await api.updateSettings({ min_order_quantity: minOrder });
+      toast(minOrder > 1
+        ? `Minimal buyurtma: ${minOrder} dona`
+        : "Minimal buyurtma cheklovi o'chirildi");
       await reload();
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : "Xatolik";

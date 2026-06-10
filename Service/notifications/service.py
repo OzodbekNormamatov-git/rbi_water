@@ -12,6 +12,7 @@ from aiogram import Bot
 from aiogram.exceptions import TelegramAPIError, TelegramForbiddenError
 
 from Domain.models.order import Order
+from Service.order_display import order_display_number
 from Service.notifications.formatters import (
     format_customer_arrived,
     format_customer_timeline,
@@ -64,7 +65,7 @@ class NotificationService:
                 self._courier_group_chat_id, order.id, e,
             )
             await self._alert_admins(
-                f"⚠️ <b>Buyurtma #{order.id}</b> kuryerlar guruhiga yuborilmadi!\n\n"
+                f"⚠️ <b>Buyurtma {order_display_number(order)}</b> kuryerlar guruhiga yuborilmadi!\n\n"
                 f"Sabab: <code>{e}</code>\n\n"
                 f"Tekshiring: COURIER_GROUP_CHAT_ID to'g'rimi va kuryer boti "
                 f"guruhga qo'shilganmi (admin sifatida)."
@@ -289,7 +290,7 @@ class NotificationService:
         (foydalanuvchi bu xabarlarni o'chirishni so'ragan). Kerak bo'lsa qaytadan ulang.
         """
         text = (
-            f"🆕 Yangi buyurtma #{order.id}\n"
+            f"🆕 Yangi buyurtma {order_display_number(order)}\n"
             f"Mijoz: {order.customer.full_name} ({order.contact_phone})\n"
             f"Jami: {order.total_amount} so'm"
         )

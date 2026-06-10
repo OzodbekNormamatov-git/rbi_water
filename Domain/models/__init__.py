@@ -4,6 +4,7 @@ from Domain.models.base import Base, SoftDeleteMixin, TimestampMixin
 from Domain.models.broadcast import Broadcast, BroadcastStatus
 from Domain.models.cart import CartItem
 from Domain.models.courier import Courier
+from Domain.models.daily_counter import DailyOrderCounter
 from Domain.models.food import Food
 from Domain.models.order import Order, OrderItem
 from Domain.models.user import User
@@ -22,4 +23,5 @@ __all__ = [
     "Broadcast",
     "BroadcastStatus",
     "AppSettings",
+    "DailyOrderCounter",
 ]

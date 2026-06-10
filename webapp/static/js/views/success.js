@@ -11,7 +11,7 @@ export function renderSuccess(root, { order }) {
   root.innerHTML = `
     <div class="success">
       <div class="success__icon">✓</div>
-      <div class="success__title">Buyurtma #${order.id} qabul qilindi!</div>
+      <div class="success__title">Buyurtma ${escapeHtml(order.display_number || ("#" + order.id))} qabul qilindi!</div>
       <div class="success__sub">Tez orada kuryer aniqlanadi va siz bilan bog'lanadi.</div>
       <div class="card" style="text-align:left">
         <div style="font-weight:600;margin-bottom:6px">Tarkibi</div>

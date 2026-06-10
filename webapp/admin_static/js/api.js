@@ -151,6 +151,15 @@ export const api = {
   // Kuryer maydonlarini yangilash — phone_number va/yoki is_active.
   // body: { phone_number?: string|null, is_active?: boolean }
   updateCourier:   (id, body) => request(`/api/admin/couriers/${id}`, { method: "PATCH", body }),
+  // Kuryerlarda jami naqd pul (admin nazorati)
+  couriersCashSummary: () => request("/api/admin/couriers/cash-summary"),
+  // Kuryer naqd topshirdi — qabul qilish. amount berilmasa hammasi.
+  // body: { amount?: number }
+  settleCourierCash: (id, amount) =>
+    request(`/api/admin/couriers/${id}/settle-cash`, {
+      method: "POST",
+      body: amount != null ? { amount } : {},
+    }),
 
   // Operator endpointlari (admin OR operator kira oladi)
   operatorCustomerLookup: (phone) =>

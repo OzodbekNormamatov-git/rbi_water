@@ -14,6 +14,7 @@ from aiogram.types import (
     ReplyKeyboardMarkup,
 )
 
+from Bots.common import fmt_money
 from Domain.enums import OrderStatus as _OrderStatus
 from Service.courier_service import CourierService
 from Service.exceptions import DomainError
@@ -152,12 +153,20 @@ def build_courier_dispatcher(
             await message.answer("Avval /start bosing.")
             return
         stats = await order_service.delivered_stats_for_courier(courier.id)
+        # Kuryer qo'lidagi naqd — kompaniyaga topshirishi kerak bo'lgan summa.
+        cash = courier.cash_balance or 0
+        cash_line = (
+            f"\n\n💵 <b>Qo'lingizdagi naqd:</b> {fmt_money(cash)}\n"
+            f"<i>Bu summani kompaniyaga topshirishingiz kerak.</i>"
+            if cash and float(cash) > 0 else ""
+        )
         await message.answer(
             "📊 <b>Sizning statistikangiz</b> (yetkazib berilgan zakazlar):\n\n"
             f"• Bugun: <b>{stats.today}</b>\n"
             f"• Shu oyda: <b>{stats.month}</b>\n"
             f"• Shu yilda: <b>{stats.year}</b>\n"
-            f"• Hammasi: <b>{stats.total}</b>",
+            f"• Hammasi: <b>{stats.total}</b>"
+            f"{cash_line}",
             reply_markup=_courier_main_kb(),
         )
 

@@ -22,6 +22,7 @@ from Service.exceptions import (
 )
 from Service.food_service import FoodService
 from Service.ledger_service import LedgerService
+from Service.order_display import order_display_number
 from Service.order_service import OrderService
 from webapp.admin.auth import admin_required, operator_required, role_of
 from webapp.auth import TelegramUser
@@ -135,6 +136,8 @@ class AdminCustomerBrief(BaseModel):
 
 class AdminOrderOut(BaseModel):
     id: int
+    daily_number: Optional[int] = None
+    display_number: str
     status: str
     status_label: str
     total_amount: Decimal
@@ -161,6 +164,8 @@ def _iso(dt):
 def _to_admin_order(o) -> AdminOrderOut:
     return AdminOrderOut(
         id=o.id,
+        daily_number=getattr(o, "daily_number", None),
+        display_number=order_display_number(o),
         status=o.status.name,
         status_label=o.status.label_uz,
         total_amount=o.total_amount,
@@ -493,6 +498,8 @@ class AdminCourierOut(BaseModel):
     delivered_today: int = 0
     delivered_month: int = 0
     delivered_total: int = 0
+    # Kuryer qo'lidagi naqd pul (DELIVERED'larda yig'ilgan, hali topshirilmagan)
+    cash_balance: Decimal = Decimal("0.00")
 
 
 class CourierUpdateIn(BaseModel):
@@ -544,10 +551,68 @@ async def list_couriers(
                 delivered_today=today,
                 delivered_month=month,
                 delivered_total=total_d,
+                cash_balance=Decimal(k.cash_balance or 0),
             ))
         return Page[AdminCourierOut](
             items=out, total=total, limit=limit, offset=offset,
         )
+
+
+class CourierCashSummaryOut(BaseModel):
+    """Barcha kuryerlar qo'lidagi jami naqd (admin nazorati)."""
+    total_cash: Decimal
+    couriers_with_cash: int
+
+
+@couriers_router.get("/cash-summary", response_model=CourierCashSummaryOut)
+async def couriers_cash_summary(
+    _=Depends(admin_required),
+    couriers: CourierService = Depends(get_courier_service),
+) -> CourierCashSummaryOut:
+    """Kuryerlarda jami qancha naqd 'yo'lda' ekanini ko'rsatadi."""
+    total_cash, with_cash = await couriers.total_cash_outstanding()
+    return CourierCashSummaryOut(
+        total_cash=Decimal(str(total_cash)),
+        couriers_with_cash=with_cash,
+    )
+
+
+class CourierSettleCashIn(BaseModel):
+    """Kuryer naqd topshirdi. `amount` berilmasa — to'liq balans (hammasi)."""
+    amount: Optional[Decimal] = Field(default=None, gt=0)
+
+
+@couriers_router.post("/{courier_id}/settle-cash", response_model=AdminCourierOut)
+async def settle_courier_cash(
+    courier_id: int,
+    payload: CourierSettleCashIn,
+    _=Depends(admin_required),
+    couriers: CourierService = Depends(get_courier_service),
+    orders: OrderService = Depends(get_order_service),
+) -> AdminCourierOut:
+    """Admin kuryerdan naqd pulni qabul qildi — balansidan ayiradi.
+
+    `amount=None` → hammasini topshirdi (balans 0 bo'ladi).
+    """
+    try:
+        c = await couriers.settle_cash(courier_id, amount=payload.amount)
+    except EntityNotFoundError:
+        raise HTTPException(status_code=404, detail="Kuryer topilmadi")
+    except InvalidOperationError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except ValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    stats = await orders.delivered_stats_for_courier(c.id)
+    return AdminCourierOut(
+        id=c.id, telegram_id=c.telegram_id, full_name=c.full_name,
+        username=c.username, phone_number=c.phone_number,
+        is_active=c.is_active,
+        has_started_bot=c.has_started_bot,
+        delivered_today=stats.today,
+        delivered_month=stats.month,
+        delivered_total=stats.total,
+        cash_balance=Decimal(c.cash_balance or 0),
+    )
 
 
 @couriers_router.patch("/{courier_id}", response_model=AdminCourierOut)
@@ -587,6 +652,7 @@ async def update_courier(
         delivered_today=stats.today,
         delivered_month=stats.month,
         delivered_total=stats.total,
+        cash_balance=Decimal(c.cash_balance or 0),
     )
 
 

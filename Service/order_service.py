@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import List, Optional, Sequence
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
 
@@ -31,6 +32,17 @@ from Service.ledger_service import (
     quantize_cashback,
     quantize_cashback_use,
 )
+from Service.order_display import order_display_number
+
+
+def _local_tz():
+    """Toshkent (yoki config'dagi) timezone — kunlik raqam sanasi uchun.
+    Topilmasa UTC+5 fallback (analytics_service bilan bir xil pattern)."""
+    try:
+        from config import get_settings
+        return ZoneInfo(get_settings().timezone)
+    except Exception:
+        return timezone(timedelta(hours=5))
 
 
 @dataclass(slots=True)
@@ -157,6 +169,16 @@ class OrderService:
                 total_qty += int(item.quantity)
                 order_items.append(line)
 
+            # Minimal buyurtma soni — admin AppSettings'da belgilaydi (default 1 = cheklov yo'q).
+            # Mahsulotlar umumiy soni shu chegaradan kam bo'lsa — rad etamiz
+            # (kichik buyurtmalar yetkazib berish narxini qoplamaydi). Server tomondan
+            # majburiy — frontend ham bloklaydi, lekin bu yagona ishonchli manba.
+            min_order_qty = int(getattr(cfg, "min_order_quantity", 1) or 1)
+            if total_qty < min_order_qty:
+                raise ValidationError(
+                    "order_below_minimum", context={"min": min_order_qty},
+                )
+
             # Bottles issued (default: items'ning umumiy soni — har bir mahsulot 1 idish)
             bottles_issued = (
                 int(data.bottles_issued) if data.bottles_issued is not None else int(total_qty)
@@ -211,9 +233,16 @@ class OrderService:
                 if cashback_enabled else Decimal("0.00")
             )
 
+            # Kunlik raqam — Toshkent mahalliy sanasi bo'yicha atomik counter.
+            # Idempotency tekshiruvidan KEYIN (takroriy POST raqam isrof qilmasin)
+            # va validatsiyalardan keyin (xato bo'lsa UoW rollback — raqam ham qaytadi).
+            today_local = datetime.now(_local_tz()).date()
+            daily_number = await uow.orders.next_daily_number(today_local)
+
             order = Order(
                 customer_id=user.id,
                 status=OrderStatus.NEW,
+                daily_number=daily_number,
                 items_total=items_total,
                 cashback_used=cashback_used,
                 cashback_earned=cashback_earned,
@@ -354,7 +383,7 @@ class OrderService:
 
             active = await uow.orders.list_active_by_courier(courier.id)
             if active:
-                ids = ", ".join(f"#{o.id}" for o in active)
+                ids = ", ".join(order_display_number(o) for o in active)
                 raise InvalidOperationError(
                     "courier_has_active_order", context={"ids": ids},
                 )
@@ -549,6 +578,7 @@ class OrderService:
                 # DELIVERED bo'lganda:
                 #   1) Keshbekni qo'shamiz (cashback_earned)
                 #   2) Idishlar balansi: +issued −returned
+                #   3) Kuryer NAQD balansi: += total_amount (mijozdan olingan naqd)
                 user = await uow.users.get_for_update(order.customer_id)
                 if user is not None:
                     if order.cashback_earned and order.cashback_earned > 0:
@@ -564,6 +594,18 @@ class OrderService:
                         new_bottles = 0
                     user.bottles_balance = new_bottles
                     await uow.users.add(user)
+                # Kuryer qo'lidagi naqd — mijoz to'lagan summa (total_amount).
+                # Keshbek bilan qoplangan qism naqd EMAS, total_amount allaqachon
+                # net (items_total − cashback_used), shuning uchun aynan shu qo'shiladi.
+                # ATOMIK: kuryer qatorini LOCK qilamiz — admin aynan shu payt
+                # settle qilsa, lost-update bo'lmasin (user balansi kabi).
+                cash = Decimal(order.total_amount or 0)
+                if cash > 0:
+                    locked_courier = await uow.couriers.get_for_update(courier.id) or courier
+                    locked_courier.cash_balance = (
+                        Decimal(locked_courier.cash_balance or 0) + cash
+                    ).quantize(Decimal("0.01"))
+                    await uow.couriers.add(locked_courier)
             await uow.orders.add(order)
             await uow.session.refresh(order, attribute_names=["courier", "customer", "items"])
             return order
