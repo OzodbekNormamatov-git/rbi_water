@@ -25,12 +25,14 @@ from Domain.constants import (
     DEFAULT_MAX_CASHBACK_USAGE_RATIO,
     MAX_BOTTLES_PER_TRANSACTION,
 )
+from Domain.models.ledger import LedgerAccount, LedgerKind
 from Domain.models.user import User
 from Service.exceptions import (
     EntityNotFoundError,
     InvalidOperationError,
     ValidationError,
 )
+from Service.ledger_posting import post_ledger
 
 
 @dataclass(slots=True)
@@ -130,10 +132,54 @@ class LedgerService:
                 cashback_use_unit=CASHBACK_USE_UNIT,
             )
 
+    # ---------------------- Jurnal o'qish / tekshirish ----------------------
+
+    async def history(
+        self,
+        subject_type: str,
+        subject_id: int,
+        *,
+        account: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ):
+        """Subyekt hisobining jurnal tarixi + umumiy son (paginatsiya uchun)."""
+        async with UnitOfWork(self._sf) as uow:
+            total = await uow.ledger.count_for_subject(
+                subject_type, subject_id, account=account,
+            )
+            entries = await uow.ledger.list_for_subject(
+                subject_type, subject_id, account=account, limit=limit, offset=offset,
+            )
+            return entries, total
+
+    async def verify_balance(
+        self, subject_type: str, subject_id: int, account: str,
+    ) -> tuple[Decimal, Decimal, bool]:
+        """Kesh balansni jurnal yig'indisi bilan solishtiradi (yaxlitlik tekshiruvi).
+
+        Qaytaradi: (jurnal_summasi, kesh_balansi, mos_keladimi).
+        Mos kelmasa — bug yoki qo'lda DB tahriri bo'lgan (audit signal).
+        """
+        async with UnitOfWork(self._sf) as uow:
+            computed = await uow.ledger.computed_balance(subject_type, subject_id, account)
+            if subject_type == "courier":
+                subj = await uow.couriers.get(subject_id)
+                cached = Decimal(subj.cash_balance or 0) if subj else Decimal("0")
+            else:
+                subj = await uow.users.get(subject_id)
+                if subj is None:
+                    cached = Decimal("0")
+                elif account == "bottles":
+                    cached = Decimal(int(subj.bottles_balance or 0))
+                else:
+                    cached = Decimal(subj.cashback_balance or 0)
+            return computed, cached, computed == cached
+
     # ---------------------- Admin manual adjustment ----------------------
 
     async def adjust_cashback(
-        self, user_id: int, delta: Decimal, *, reason: str = "",
+        self, user_id: int, delta: Decimal, *, reason: str = "", operator_id: int | None = None,
     ) -> User:
         if delta is None:
             raise ValidationError("cashback_negative")
@@ -141,17 +187,24 @@ class LedgerService:
             user = await uow.users.get_for_update(user_id)
             if user is None:
                 raise EntityNotFoundError("user_not_registered")
-            new_balance = Decimal(user.cashback_balance or 0) + Decimal(str(delta))
-            if new_balance < 0:
+            # Spetsifik UX xatosi uchun oldindan tekshirish (post_ledger generic
+            # "balance_negative" beradi; bu yerda aniqroq xabar chiqaramiz).
+            if Decimal(user.cashback_balance or 0) + Decimal(str(delta)) < 0:
                 raise InvalidOperationError(
                     "cashback_not_enough",
                     context={"available": float(user.cashback_balance or 0)},
                 )
-            user.cashback_balance = new_balance.quantize(Decimal("0.01"))
-            await uow.users.add(user)
+            await post_ledger(
+                uow, subject=user,
+                account=LedgerAccount.CASHBACK, kind=LedgerKind.CASHBACK_ADJUST,
+                delta=Decimal(str(delta)), operator_id=operator_id,
+                reason=reason or "Admin qo'lda tuzatishi",
+            )
             return user
 
-    async def adjust_bottles(self, user_id: int, delta: int) -> User:
+    async def adjust_bottles(
+        self, user_id: int, delta: int, *, reason: str = "", operator_id: int | None = None,
+    ) -> User:
         if delta is None:
             raise ValidationError(
                 "bottles_out_of_range", context={"max": MAX_BOTTLES_PER_TRANSACTION},
@@ -166,8 +219,7 @@ class LedgerService:
             user = await uow.users.get_for_update(user_id)
             if user is None:
                 raise EntityNotFoundError("user_not_registered")
-            new_balance = int(user.bottles_balance or 0) + delta_int
-            if new_balance < 0:
+            if int(user.bottles_balance or 0) + delta_int < 0:
                 raise InvalidOperationError(
                     "bottles_return_exceeds_balance",
                     context={
@@ -175,6 +227,10 @@ class LedgerService:
                         "requested": abs(delta_int),
                     },
                 )
-            user.bottles_balance = new_balance
-            await uow.users.add(user)
+            await post_ledger(
+                uow, subject=user,
+                account=LedgerAccount.BOTTLES, kind=LedgerKind.BOTTLE_ADJUST,
+                delta=delta_int, operator_id=operator_id,
+                reason=reason or "Admin qo'lda tuzatishi",
+            )
             return user

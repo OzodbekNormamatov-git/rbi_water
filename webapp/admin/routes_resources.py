@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, 
 from pydantic import BaseModel, ConfigDict, Field
 
 from Data.unit_of_work import UnitOfWork
+from Domain.constants import MAX_BOTTLES_PER_UNIT
 from Domain.enums import OrderStatus
 from Service.courier_service import CourierService
 from Service.exceptions import (
@@ -296,6 +297,8 @@ class AdminProductOut(BaseModel):
     price: Decimal
     # Minimal buyurtma soni (1 = cheklov yo'q)
     min_quantity: int = 1
+    # Har dona necha qaytariladigan idish beradi (0 = sanalmaydi: pumpa/kuller).
+    bottles_per_unit: int = 1
     is_available: bool
     image_path: Optional[str] = None
     deleted_at: Optional[str] = None   # ISO sana — arxivlangan bo'lsa
@@ -309,6 +312,8 @@ class ProductCreateIn(BaseModel):
     price: Decimal = Field(gt=0)
     # Minimal buyurtma soni — 1..999 (service'da ham validatsiya)
     min_quantity: int = Field(default=1, ge=1, le=999)
+    # Qaytariladigan idishlar — 0..MAX (0 = sanalmaydi). Service ham validate qiladi.
+    bottles_per_unit: int = Field(default=1, ge=0, le=MAX_BOTTLES_PER_UNIT)
 
 
 class ProductUpdateIn(BaseModel):
@@ -317,6 +322,7 @@ class ProductUpdateIn(BaseModel):
     price: Optional[Decimal] = Field(default=None, gt=0)
     is_available: Optional[bool] = None
     min_quantity: Optional[int] = Field(default=None, ge=1, le=999)
+    bottles_per_unit: Optional[int] = Field(default=None, ge=0, le=MAX_BOTTLES_PER_UNIT)
 
 
 def _to_admin_product(f) -> AdminProductOut:
@@ -324,6 +330,7 @@ def _to_admin_product(f) -> AdminProductOut:
         id=f.id, name=f.name, description=f.description or "",
         price=f.price,
         min_quantity=int(getattr(f, "min_quantity", 1) or 1),
+        bottles_per_unit=int(getattr(f, "bottles_per_unit", 1) or 0),
         is_available=f.is_available,
         image_path=f.image_file_id,
         deleted_at=f.deleted_at.isoformat() if getattr(f, "deleted_at", None) else None,
@@ -382,6 +389,7 @@ async def create_product(
             price=payload.price,
             image_file_id=None,
             min_quantity=payload.min_quantity,
+            bottles_per_unit=payload.bottles_per_unit,
         )
     except ValidationError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -403,6 +411,7 @@ async def update_product(
             price=payload.price,
             is_available=payload.is_available,
             min_quantity=payload.min_quantity,
+            bottles_per_unit=payload.bottles_per_unit,
         )
     except EntityNotFoundError:
         raise HTTPException(status_code=404, detail="Mahsulot topilmadi")
@@ -595,7 +604,7 @@ class CourierSettleCashIn(BaseModel):
 async def settle_courier_cash(
     courier_id: int,
     payload: CourierSettleCashIn,
-    _=Depends(admin_required),
+    user: TelegramUser = Depends(admin_required),
     couriers: CourierService = Depends(get_courier_service),
     orders: OrderService = Depends(get_order_service),
 ) -> AdminCourierOut:
@@ -604,7 +613,7 @@ async def settle_courier_cash(
     `amount=None` → hammasini topshirdi (balans 0 bo'ladi).
     """
     try:
-        c = await couriers.settle_cash(courier_id, amount=payload.amount)
+        c = await couriers.settle_cash(courier_id, amount=payload.amount, operator_id=int(user.id))
     except EntityNotFoundError:
         raise HTTPException(status_code=404, detail="Kuryer topilmadi")
     except InvalidOperationError as e:
@@ -736,6 +745,68 @@ async def customer_orders(
         )
 
 
+# ---------------------- Ledger (moliyaviy jurnal) ----------------------
+
+class LedgerEntryOut(BaseModel):
+    id: int
+    account: str
+    kind: str
+    delta: Decimal
+    balance_after: Decimal
+    order_id: Optional[int] = None
+    operator_id: Optional[int] = None
+    reason: str = ""
+    created_at: Optional[str] = None
+
+
+def _to_ledger_entry(e) -> LedgerEntryOut:
+    return LedgerEntryOut(
+        id=e.id, account=e.account, kind=e.kind,
+        delta=e.delta, balance_after=e.balance_after,
+        order_id=e.order_id, operator_id=e.operator_id,
+        reason=e.reason or "", created_at=_iso(e.created_at),
+    )
+
+
+@customers_router.get("/{customer_id}/ledger", response_model=Page[LedgerEntryOut])
+async def customer_ledger(
+    customer_id: int,
+    _=Depends(admin_required),
+    ledger: LedgerService = Depends(get_ledger_service),
+    account: Optional[str] = Query(default=None),
+    limit: int = Query(default=50, le=200),
+    offset: int = Query(default=0, ge=0),
+) -> Page[LedgerEntryOut]:
+    """Mijoz keshbek/idish balansining o'zgarmas jurnal tarixi (audit)."""
+    entries, total = await ledger.history(
+        "user", customer_id, account=account, limit=limit, offset=offset,
+    )
+    return Page[LedgerEntryOut](
+        items=[_to_ledger_entry(e) for e in entries],
+        total=total, limit=limit, offset=offset,
+    )
+
+
+# Kuryer naqd jurnal tarixi — `couriers_router` ga biriktiriladi (DTO yuqorida
+# aniqlangani uchun shu yerda; router obyekti faylning boshida yaratilgan).
+@couriers_router.get("/{courier_id}/ledger", response_model=Page[LedgerEntryOut])
+async def courier_ledger(
+    courier_id: int,
+    _=Depends(admin_required),
+    ledger: LedgerService = Depends(get_ledger_service),
+    limit: int = Query(default=50, le=200),
+    offset: int = Query(default=0, ge=0),
+) -> Page[LedgerEntryOut]:
+    """Kuryer naqd balansining o'zgarmas jurnal tarixi (audit)."""
+    entries, total = await ledger.history(
+        "courier", courier_id, account="cash", limit=limit, offset=offset,
+    )
+    return Page[LedgerEntryOut](
+        items=[_to_ledger_entry(e) for e in entries],
+        total=total, limit=limit, offset=offset,
+    )
+
+
 # ---------------------- Balance adjustments (admin) ----------------------
 
 class CashbackAdjustIn(BaseModel):
@@ -759,11 +830,14 @@ class CustomerBalanceOut(BaseModel):
 async def adjust_cashback(
     customer_id: int,
     payload: CashbackAdjustIn,
-    _=Depends(admin_required),
+    user: TelegramUser = Depends(admin_required),
     ledger: LedgerService = Depends(get_ledger_service),
 ) -> CustomerBalanceOut:
     try:
-        u = await ledger.adjust_cashback(customer_id, Decimal(str(payload.delta)), reason=payload.reason)
+        u = await ledger.adjust_cashback(
+            customer_id, Decimal(str(payload.delta)),
+            reason=payload.reason, operator_id=int(user.id),
+        )
     except EntityNotFoundError:
         raise HTTPException(status_code=404, detail="Mijoz topilmadi")
     except InvalidOperationError as e:
@@ -781,11 +855,14 @@ async def adjust_cashback(
 async def adjust_bottles(
     customer_id: int,
     payload: BottlesAdjustIn,
-    _=Depends(admin_required),
+    user: TelegramUser = Depends(admin_required),
     ledger: LedgerService = Depends(get_ledger_service),
 ) -> CustomerBalanceOut:
     try:
-        u = await ledger.adjust_bottles(customer_id, int(payload.delta))
+        u = await ledger.adjust_bottles(
+            customer_id, int(payload.delta),
+            reason=payload.reason, operator_id=int(user.id),
+        )
     except EntityNotFoundError:
         raise HTTPException(status_code=404, detail="Mijoz topilmadi")
     except InvalidOperationError as e:

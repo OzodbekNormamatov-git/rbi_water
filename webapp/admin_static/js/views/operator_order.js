@@ -13,6 +13,7 @@
 import { api, ApiError } from "../api.js";
 import { fmtMoney, fmtCount, escapeHtml } from "../format.js";
 import { toast } from "../toast.js";
+import { resolveReorderItems } from "../reorder_resolve.js";
 
 // Mini xarita modal — admin paneliga oddiy Leaflet bilan
 const LEAFLET_CSS = "https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css";
@@ -183,6 +184,7 @@ export async function renderOperatorOrder(root) {
         </div>
         <div class="muted" id="op-lookup-status" style="font-size:12px;margin-top:4px"></div>
       </div>
+      <div id="op-recent"></div>
       <div class="form-row" id="op-name-row" hidden>
         <label class="label" for="op-name">Ism</label>
         <input class="input" id="op-name" type="text" placeholder="Mijozning ismi" />
@@ -238,6 +240,7 @@ export async function renderOperatorOrder(root) {
   const phoneEl = root.querySelector("#op-phone");
   const lookupBtn = root.querySelector("#op-lookup");
   const lookupStatus = root.querySelector("#op-lookup-status");
+  const recentEl = root.querySelector("#op-recent");
   const nameRow = root.querySelector("#op-name-row");
   const nameEl = root.querySelector("#op-name");
   const productsEl = root.querySelector("#op-products");
@@ -274,12 +277,15 @@ export async function renderOperatorOrder(root) {
         // Auto-fill contact phone
         if (!contactEl.value) contactEl.value = r.phone_number;
         updateBonusCard();
+        // Oxirgi buyurtmalarni ko'rsatamiz — operator bittada takrorlay oladi.
+        loadRecentOrders(r.id);
       } else {
         customer = null;
         lookupStatus.textContent = "❗️ Yangi mijoz — ismni kiriting";
         nameRow.hidden = false;
         nameEl.focus();
         if (!contactEl.value) contactEl.value = phone;
+        recentEl.innerHTML = "";
         updateBonusCard();
       }
     } catch (e) {
@@ -372,6 +378,79 @@ export async function renderOperatorOrder(root) {
     }
     updateBonusCard();
     updateSummary();
+  }
+
+  // ----- Takror buyurtma (reorder)
+  // Cart Map o'zgargandan keyin mahsulot ro'yxatidagi qty ko'rsatkichlarini sinxronlaymiz.
+  function syncProductRowsFromCart() {
+    productsEl.querySelectorAll(".op-product-row").forEach((row) => {
+      const id = Number(row.dataset.id);
+      const qtyEl = row.querySelector("[data-qty]");
+      if (qtyEl) qtyEl.textContent = String(cart.get(id) || 0);
+    });
+  }
+
+  // O'tgan buyurtmani formaga to'ldiradi (joriy katalogga moslab) — operator
+  // tekshirib/o'zgartirib yuboradi. Mavjud create_order quvuridan o'tadi.
+  function applyReorder(order) {
+    if (!products.length) {
+      toast("Mahsulotlar hali yuklanmadi, biroz kuting", "error");
+      return;
+    }
+    const { available, removed, adjusted } = resolveReorderItems(order.items, products);
+    cart.clear();
+    for (const r of available) cart.set(r.food_id, r.quantity);
+    syncProductRowsFromCart();
+    updateCartSummary();
+
+    // Manzil
+    if (order.latitude && order.longitude) {
+      location = { latitude: Number(order.latitude), longitude: Number(order.longitude) };
+      addrStatus.innerHTML = `✅ <code>${location.latitude.toFixed(5)}, ${location.longitude.toFixed(5)}</code>`;
+    }
+    if (order.address_details) addrDetailsEl.value = order.address_details;
+    // Aloqa + izoh
+    if (order.contact_phone) contactEl.value = order.contact_phone;
+    if (order.note) noteEl.value = order.note;
+
+    let msg = "♻️ Takrorlandi — tekshirib, yuboring";
+    if (removed.length) msg += ` · ${removed.length} ta mahsulot endi yo'q`;
+    if (adjusted.length) msg += ` · ${adjusted.length} ta miqdor minimalga moslandi`;
+    toast(msg, removed.length ? "error" : "success");
+  }
+
+  async function loadRecentOrders(customerId) {
+    recentEl.innerHTML = `<div class="muted" style="font-size:12px;margin-top:8px">Oxirgi buyurtmalar yuklanmoqda…</div>`;
+    let list;
+    try {
+      list = await api.operatorRecentOrders(customerId, { limit: 5 });
+    } catch (e) {
+      recentEl.innerHTML = "";  // jim — takror buyurtma ixtiyoriy qulaylik
+      return;
+    }
+    if (!list || !list.length) {
+      recentEl.innerHTML = `<div class="muted" style="font-size:12px;margin-top:8px">Oldingi buyurtmalar yo'q.</div>`;
+      return;
+    }
+    recentEl.innerHTML = `
+      <div class="label" style="margin-top:12px">♻️ Oxirgi buyurtmalar (takrorlash uchun)</div>
+      ${list.map((o, i) => `
+        <div class="op-recent-order" style="border:1px solid var(--border,#e5e7eb);border-radius:10px;padding:10px;margin-top:8px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <b>${escapeHtml(o.display_number)}</b>
+            <span class="muted" style="font-size:12px">${o.status_label ? escapeHtml(o.status_label) : ""}</span>
+            <span style="margin-left:auto;font-weight:700;color:var(--brand-deep)">${fmtMoney(o.total_amount)}</span>
+          </div>
+          <div class="muted" style="font-size:12px;margin-top:4px">
+            ${(o.items || []).map((it) => `${escapeHtml(it.food_name)}×${it.quantity}`).join(", ") || "—"}
+          </div>
+          <button class="btn btn--secondary" data-reorder="${i}" type="button" style="margin-top:8px;padding:4px 10px;font-size:13px">♻️ Takrorlash</button>
+        </div>
+      `).join("")}
+    `;
+    recentEl.querySelectorAll("button[data-reorder]").forEach((btn) => {
+      btn.addEventListener("click", () => applyReorder(list[Number(btn.dataset.reorder)]));
+    });
   }
 
   // ----- 3. Address

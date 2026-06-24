@@ -166,6 +166,12 @@ export const api = {
     request(`/api/admin/operator/customer-lookup?phone=${encodeURIComponent(phone)}`),
   operatorCreateOrder: (body) =>
     request("/api/admin/operator/orders", { method: "POST", body }),
+  // Mijozning oxirgi buyurtmalari — "takrorlash" uchun (items snapshot bilan).
+  operatorRecentOrders: (customerId, { limit } = {}) => {
+    const sp = new URLSearchParams();
+    if (limit != null) sp.set("limit", String(limit));
+    return request(`/api/admin/operator/customers/${customerId}/recent-orders${sp.toString() ? "?" + sp : ""}`);
+  },
 
   customers: (q = "", { limit, offset } = {}) => {
     const sp = new URLSearchParams();

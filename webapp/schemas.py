@@ -28,11 +28,13 @@ class ProductOut(BaseModel):
     price: Decimal
     # Minimal buyurtma soni — mijoz kamida shuncha dona olishi shart (1 = cheklov yo'q).
     min_quantity: int = 1
+    # Har dona necha qaytariladigan idish beradi (0 = sanalmaydi, 1 = oddiy idish).
+    bottles_per_unit: int = 1
     image_url: Optional[str] = None
 
     model_config = ConfigDict(json_schema_extra={"example": {
         "id": 1, "name": "Suv 18.9 l", "description": "", "price": "22000",
-        "min_quantity": 2, "image_url": "/media/foods/abc.jpg",
+        "min_quantity": 2, "bottles_per_unit": 1, "image_url": "/media/foods/abc.jpg",
     }})
 
 

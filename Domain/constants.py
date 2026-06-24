@@ -50,6 +50,12 @@ CASHBACK_USE_UNIT: Final[int] = 1000
 # (mijoz tasodifan katta son kiritmasin uchun himoya).
 MAX_BOTTLES_PER_TRANSACTION: Final[int] = 50
 
+# Har bir mahsulot DONASIGA to'g'ri keladigan qaytariladigan idishlar soni
+# (`Food.bottles_per_unit`). 0 = sanalmaydi (pumpa, kuller, filtr), 1 = oddiy
+# idish (suv baklashkasi), N = multi-pack (masalan, 6-li yashik). DELIVERED
+# bo'lganda mijoz idish balansiga shu son × dona qo'shiladi.
+MAX_BOTTLES_PER_UNIT: Final[int] = 99
+
 # ---------------------- Broadcast / Rassilka ----------------------
 MAX_BROADCAST_TITLE_LENGTH: Final[int] = 80
 MAX_BROADCAST_BODY_LENGTH: Final[int] = 3500

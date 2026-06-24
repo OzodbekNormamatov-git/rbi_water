@@ -4,7 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, List
 
-from sqlalchemy import BigInteger, DateTime, Enum as SAEnum, Float, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import BigInteger, DateTime, Enum as SAEnum, Float, ForeignKey, Integer, Numeric, SmallInteger, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from Domain.enums import OrderStatus
@@ -133,6 +133,12 @@ class OrderItem(Base):
     food_name: Mapped[str] = mapped_column(String(120), nullable=False)
     unit_price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Buyurtma vaqtidagi `Food.bottles_per_unit` SNAPSHOT'i — har dona shu
+    # mahsulot necha qaytariladigan idish berishini buyurtma yaratilgan paytdagi
+    # holatda muzlatadi. Mahsulot keyin "qaytarilmaydi" qilib o'zgartirilsa ham,
+    # bu buyurtmaning idish hisobi o'zgarmaydi. Eski (migration'gacha) qatorlarda
+    # default 1 — avvalgi "har item = 1 idish" xulq-atvori bilan mos.
+    bottles_per_unit: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=1)
 
     order: Mapped["Order"] = relationship(back_populates="items")
     food: Mapped["Food | None"] = relationship(lazy="selectin")

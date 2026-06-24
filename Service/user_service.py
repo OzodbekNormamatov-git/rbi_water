@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 import time
 from dataclasses import dataclass
@@ -10,6 +11,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
 from Data.unit_of_work import UnitOfWork
 from Domain.models.user import User
 from Service.exceptions import EntityNotFoundError, ValidationError
+
+log = logging.getLogger(__name__)
 
 _PHONE_RE = re.compile(r"^\+?\d{9,15}$")
 
@@ -120,7 +123,31 @@ class UserService:
                 return existing
 
             phone_owner = await uow.users.get_by_phone(phone)
-            if phone_owner:
+            if phone_owner is not None:
+                # IDENTITY MERGE — telefon allaqachon "guest" hisobga tegishli
+                # (operator yaratgan, botga hali /start qilmagan). Uni shu real
+                # Telegram hisobiga BIRIKTIRAMIZ (adopt): operator yaratgan
+                # buyurtmalar, balanslar va ledger yozuvlari user.id ga
+                # bog'langan — telegram_id ni o'zgartirsak ham saqlanadi
+                # (data migration kerak emas). Shunday qilib mijoz oldingi
+                # tarixini va keshbegini yo'qotmaydi.
+                #
+                # Faqat GUEST (has_started_bot=False) hisob biriktiriladi.
+                # Telefon haqiqiy, faollashgan boshqa hisobga tegishli bo'lsa —
+                # uni o'g'irlab bo'lmaydi (himoya: phone_taken).
+                if not phone_owner.has_started_bot:
+                    if phone_owner.is_deleted:
+                        await uow.users.restore(phone_owner)
+                    old_tg = phone_owner.telegram_id
+                    phone_owner.telegram_id = data.telegram_id
+                    phone_owner.full_name = full_name
+                    phone_owner.has_started_bot = True
+                    await uow.users.add(phone_owner)
+                    log.info(
+                        "Identity merge: guest user id=%s (tg %s -> %s) phone=%s adopted",
+                        phone_owner.id, old_tg, data.telegram_id, phone,
+                    )
+                    return phone_owner
                 raise ValidationError("phone_taken")
 
             user = User(

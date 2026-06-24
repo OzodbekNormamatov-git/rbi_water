@@ -166,6 +166,43 @@ _MIGRATIONS: tuple[str, ...] = (
     "ALTER TABLE foods ADD COLUMN IF NOT EXISTS min_quantity INTEGER NOT NULL DEFAULT 1",
     # Global min_order_quantity bekor qilindi — per-mahsulot min bilan almashtirildi.
     "ALTER TABLE app_settings DROP COLUMN IF EXISTS min_order_quantity",
+
+    # ------ v14: Sanaladigan/sanalmaydigan tovarlar (qaytariladigan idishlar) ------
+    # Food.bottles_per_unit — har dona necha qaytariladigan idish beradi
+    # (0 = sanalmaydi: pumpa/kuller/filtr; 1 = oddiy idish; N = multi-pack).
+    "ALTER TABLE foods ADD COLUMN IF NOT EXISTS bottles_per_unit SMALLINT NOT NULL DEFAULT 1",
+    # order_items.bottles_per_unit — buyurtma vaqtidagi qiymat SNAPSHOT'i.
+    "ALTER TABLE order_items ADD COLUMN IF NOT EXISTS bottles_per_unit SMALLINT NOT NULL DEFAULT 1",
+
+    # ------ v15: Append-only moliyaviy jurnal (ledger_entries) ------
+    # Jadval va indekslar `Base.metadata.create_all` tomonidan yaratiladi
+    # (model ro'yxatdan o'tgan). Bu yerda faqat mavjud balanslarni BACKFILL
+    # qilamiz — har nolga teng bo'lmagan balans uchun bitta opening_balance
+    # seed yozuvi. NOT EXISTS bilan idempotent (har startda xavfsiz qayta ishlaydi).
+    """INSERT INTO ledger_entries
+        (subject_type, subject_id, account, kind, delta, balance_after, reason, created_at)
+       SELECT 'user', id, 'cashback', 'opening_balance',
+              cashback_balance, cashback_balance, 'Ochilish balansi (ledger joriy etildi)', NOW()
+       FROM users
+       WHERE cashback_balance <> 0
+         AND NOT EXISTS (SELECT 1 FROM ledger_entries le
+            WHERE le.subject_type='user' AND le.subject_id=users.id AND le.account='cashback')""",
+    """INSERT INTO ledger_entries
+        (subject_type, subject_id, account, kind, delta, balance_after, reason, created_at)
+       SELECT 'user', id, 'bottles', 'opening_balance',
+              bottles_balance, bottles_balance, 'Ochilish balansi (ledger joriy etildi)', NOW()
+       FROM users
+       WHERE bottles_balance <> 0
+         AND NOT EXISTS (SELECT 1 FROM ledger_entries le
+            WHERE le.subject_type='user' AND le.subject_id=users.id AND le.account='bottles')""",
+    """INSERT INTO ledger_entries
+        (subject_type, subject_id, account, kind, delta, balance_after, reason, created_at)
+       SELECT 'courier', id, 'cash', 'opening_balance',
+              cash_balance, cash_balance, 'Ochilish balansi (ledger joriy etildi)', NOW()
+       FROM couriers
+       WHERE cash_balance <> 0
+         AND NOT EXISTS (SELECT 1 FROM ledger_entries le
+            WHERE le.subject_type='courier' AND le.subject_id=couriers.id AND le.account='cash')""",
 )
 
 

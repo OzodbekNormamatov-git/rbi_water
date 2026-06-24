@@ -131,6 +131,19 @@ export async function renderProducts(root) {
     loadPage(true);
   }
 
+  // Idish hisobi belgisi — admin bir qarashda ko'rishi uchun. Oddiy idish
+  // (bottles_per_unit === 1) — yashirin (eng keng tarqalgan holat, shovqin qilmaymiz).
+  function bottlesHint(p) {
+    const bpu = Number(p.bottles_per_unit ?? 1);
+    if (bpu === 0) {
+      return `<div class="muted" style="font-size:11px">♻️ idish sanalmaydi</div>`;
+    }
+    if (bpu > 1) {
+      return `<div class="muted" style="font-size:11px">♻️ ${bpu} idish/dona</div>`;
+    }
+    return "";
+  }
+
   function rowHtml(p, mode) {
     if (mode === "archived") {
       return `
@@ -151,7 +164,7 @@ export async function renderProducts(root) {
       <tr>
         <td class="hide-narrow"><b>${p.id}</b></td>
         <td>${thumbCell(p.image_path)}</td>
-        <td>${escapeHtml(p.name)}${Number(p.min_quantity || 1) > 1 ? `<div class="muted" style="font-size:11px">min ${p.min_quantity} dona</div>` : ""}</td>
+        <td>${escapeHtml(p.name)}${Number(p.min_quantity || 1) > 1 ? `<div class="muted" style="font-size:11px">min ${p.min_quantity} dona</div>` : ""}${bottlesHint(p)}</td>
         <td class="hide-narrow muted">${escapeHtml(p.description || "—")}</td>
         <td style="text-align:right;font-weight:600">${fmtMoney(p.price)}</td>
         <td><span class="pill pill--${p.is_available ? 'active' : 'inactive'}">${p.is_available ? "✅" : "⛔️"}</span></td>
@@ -320,6 +333,12 @@ function openCreateModal(onSaved) {
         <div class="muted" style="font-size:12px;margin-top:4px">
           Mijoz shu mahsulotdan kamida shuncha dona olishi shart. <b>1</b> = cheklov yo'q.
         </div>
+        <label class="label">♻️ Qaytariladigan idish (har dona)</label>
+        <input class="input" id="m-bpu" type="number" inputmode="numeric" min="0" max="99" step="1" value="1" />
+        <div class="muted" style="font-size:12px;margin-top:4px">
+          Har dona necha qaytariladigan idish beradi (idish balansiga qo'shiladi).
+          <b>0</b> = sanalmaydi (suv pumpasi, kuller, filtr), <b>1</b> = oddiy idish (suv).
+        </div>
         <label class="label">Rasm (ixtiyoriy)</label>
         <div id="m-image" class="photo-picker"></div>
       </div>
@@ -341,14 +360,16 @@ function openCreateModal(onSaved) {
     const description = document.getElementById("m-desc").value.trim();
     const price = Number(document.getElementById("m-price").value);
     const minQty = Math.floor(Number(document.getElementById("m-minq").value)) || 1;
+    const bpu = Math.floor(Number(document.getElementById("m-bpu").value));
     if (name.length < 2) return toast("Nomi juda qisqa", "error");
     if (!(price > 0)) return toast("Narx noto'g'ri", "error");
     if (minQty < 1 || minQty > 999) return toast("Minimal buyurtma 1..999 oralig'ida bo'lishi shart", "error");
+    if (!(bpu >= 0) || bpu > 99) return toast("Qaytariladigan idish 0..99 oralig'ida bo'lishi shart", "error");
     const saveBtn = document.getElementById("m-save");
     saveBtn.disabled = true;
     saveBtn.textContent = "Saqlanmoqda…";
     try {
-      const created = await api.createProduct({ name, description, price, min_quantity: minQty });
+      const created = await api.createProduct({ name, description, price, min_quantity: minQty, bottles_per_unit: bpu });
       const file = picker.getFile();
       if (file) {
         // Mahsulot yaratildi — rasmni alohida POST qilamiz. Xato bo'lsa,
@@ -394,6 +415,12 @@ function openEditModal(p, onSaved) {
         <div class="muted" style="font-size:12px;margin-top:4px">
           Mijoz shu mahsulotdan kamida shuncha dona olishi shart. <b>1</b> = cheklov yo'q.
         </div>
+        <label class="label">♻️ Qaytariladigan idish (har dona)</label>
+        <input class="input" id="m-bpu" type="number" inputmode="numeric" min="0" max="99" step="1" value="${Number(p.bottles_per_unit ?? 1)}" />
+        <div class="muted" style="font-size:12px;margin-top:4px">
+          Har dona necha qaytariladigan idish beradi (idish balansiga qo'shiladi).
+          <b>0</b> = sanalmaydi (suv pumpasi, kuller, filtr), <b>1</b> = oddiy idish (suv).
+        </div>
         <label class="label">Rasm</label>
         <div id="m-image" class="photo-picker"></div>
       </div>
@@ -415,13 +442,15 @@ function openEditModal(p, onSaved) {
     const description = document.getElementById("m-desc").value.trim();
     const price = Number(document.getElementById("m-price").value);
     const minQty = Math.floor(Number(document.getElementById("m-minq").value)) || 1;
+    const bpu = Math.floor(Number(document.getElementById("m-bpu").value));
     if (minQty < 1 || minQty > 999) return toast("Minimal buyurtma 1..999 oralig'ida bo'lishi shart", "error");
+    if (!(bpu >= 0) || bpu > 99) return toast("Qaytariladigan idish 0..99 oralig'ida bo'lishi shart", "error");
     const saveBtn = document.getElementById("m-save");
     saveBtn.disabled = true;
     saveBtn.textContent = "Saqlanmoqda…";
     try {
       // 1) Matn maydonlari (PATCH)
-      await api.updateProduct(p.id, { name, description, price, min_quantity: minQty });
+      await api.updateProduct(p.id, { name, description, price, min_quantity: minQty, bottles_per_unit: bpu });
       // 2) Rasm o'zgargan bo'lsa, alohida endpoint
       const file = picker.getFile();
       if (file) {

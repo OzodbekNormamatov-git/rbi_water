@@ -47,6 +47,7 @@ async def list_products(
             description=f.description or "",
             price=f.price,
             min_quantity=int(getattr(f, "min_quantity", 1) or 1),
+            bottles_per_unit=int(getattr(f, "bottles_per_unit", 1) or 0),
             image_url=_image_url(request, f.image_file_id),
         )
         for f in items
@@ -70,5 +71,6 @@ async def get_product(
         description=f.description or "",
         price=f.price,
         min_quantity=int(getattr(f, "min_quantity", 1) or 1),
+        bottles_per_unit=int(getattr(f, "bottles_per_unit", 1) or 0),
         image_url=_image_url(request, f.image_file_id),
     )

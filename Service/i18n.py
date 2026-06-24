@@ -51,6 +51,7 @@ _MESSAGES: Dict[str, Dict[str, str]] = {
         "price_invalid":         "Narx noto'g'ri formatda.",
         "price_positive":        "Narx 0 dan katta bo'lishi kerak.",
         "food_min_qty_invalid":  "Minimal buyurtma soni {min} va {max} oralig'ida bo'lishi shart.",
+        "food_bottles_per_unit_invalid": "Qaytariladigan idishlar soni {min} va {max} oralig'ida bo'lishi shart.",
         # Courier
         "courier_not_registered":         "Kuryer ro'yxatda yo'q.",
         "cash_amount_invalid":            "Naqd summa noto'g'ri.",
@@ -76,6 +77,8 @@ _MESSAGES: Dict[str, Dict[str, str]] = {
         # Bottles
         "bottles_out_of_range":           "Idishlar soni 0..{max} oralig'ida bo'lishi shart.",
         "bottles_return_exceeds_balance": "Mijozda atigi {available} ta idish mavjud, {requested} ta qaytarib bo'lmaydi.",
+        # Ledger (moliyaviy jurnal)
+        "balance_negative":               "Balans manfiyga tushib ketadi (mavjud: {available}).",
         # Broadcast
         "broadcast_body_required":        "Xabar matni bo'sh bo'la olmaydi.",
         "broadcast_body_too_long":        "Xabar matni juda uzun ({max} belgidan ko'p emas).",

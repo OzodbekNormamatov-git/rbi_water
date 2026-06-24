@@ -20,12 +20,14 @@ from Domain.constants import (
     MAX_QUANTITY_PER_ITEM,
 )
 from Domain.enums import OrderStatus
+from Domain.models.ledger import LedgerAccount, LedgerKind
 from Domain.models.order import Order, OrderItem
 from Service.exceptions import (
     EntityNotFoundError,
     InvalidOperationError,
     ValidationError,
 )
+from Service.ledger_posting import post_ledger
 from Service.ledger_service import (
     cap_cashback_usage,
     compute_cashback_for,
@@ -145,6 +147,9 @@ class OrderService:
             order_items: List[OrderItem] = []
             items_total = Decimal("0.00")
             total_qty = 0
+            # Faqat QAYTARILADIGAN idishlar yig'indisi (sanalmaydigan tovarlar —
+            # pumpa, kuller — `bottles_per_unit=0` bo'lib bu hisobga kirmaydi).
+            returnable_bottles = 0
             for item in data.items:
                 if item.quantity <= 0:
                     raise ValidationError("cart_item_qty_invalid")
@@ -167,19 +172,29 @@ class OrderService:
                         "item_below_minimum",
                         context={"name": food.name, "min": min_q},
                     )
+                # Qaytariladigan idishlar soni — har dona uchun. `getattr`
+                # fallback: migration kechiksa ham oqim yiqilmasin (default 1).
+                bpu = int(getattr(food, "bottles_per_unit", 1) or 0)
+                if bpu < 0:
+                    bpu = 0
                 line = OrderItem(
                     food_id=food.id,
                     food_name=food.name,
                     unit_price=food.price,
                     quantity=item.quantity,
+                    # SNAPSHOT — mahsulot keyin o'zgarsa eski buyurtma o'zgarmaydi.
+                    bottles_per_unit=bpu,
                 )
                 items_total += food.price * item.quantity
                 total_qty += int(item.quantity)
+                returnable_bottles += int(item.quantity) * bpu
                 order_items.append(line)
 
-            # Bottles issued (default: items'ning umumiy soni — har bir mahsulot 1 idish)
+            # Bottles issued — default: faqat qaytariladigan mahsulotlar
+            # (Σ dona × bottles_per_unit). Sanalmaydigan tovarlar (pumpa, kuller)
+            # hisobga olinmaydi. Caller aniq qiymat bersa — o'shani ishlatamiz.
             bottles_issued = (
-                int(data.bottles_issued) if data.bottles_issued is not None else int(total_qty)
+                int(data.bottles_issued) if data.bottles_issued is not None else int(returnable_bottles)
             )
             if bottles_issued < 0:
                 bottles_issued = 0
@@ -261,11 +276,19 @@ class OrderService:
 
             # Keshbek darhol ushlab qo'yiladi (escrow): bekor qilinsa qaytariladi.
             # Idishlar balansi YETKAZIB BERILDI bo'lganda yangilanadi.
+            # Balans + jurnal yozuvi yagona nuqtadan (post_ledger) o'tadi.
             if cashback_used > 0:
-                user.cashback_balance = (
-                    Decimal(user.cashback_balance or 0) - cashback_used
-                ).quantize(Decimal("0.01"))
-                await uow.users.add(user)
+                await post_ledger(
+                    uow,
+                    subject=user,
+                    account=LedgerAccount.CASHBACK,
+                    kind=LedgerKind.CASHBACK_SPEND,
+                    delta=-cashback_used,
+                    order_id=order.id,
+                    operator_id=data.created_by_operator_id,
+                    reason="Buyurtma uchun keshbek ishlatildi (escrow)",
+                    idempotency_key=f"order:{order.id}:cashback_spend",
+                )
 
             return await uow.orders.get_full(order.id)  # type: ignore[return-value]
 
@@ -527,14 +550,18 @@ class OrderService:
             if order.status.is_terminal:
                 raise InvalidOperationError("order_already_closed")
 
-            # Eskirgan keshbek (cashback_used) ni mijozga qaytaramiz.
+            # Ushlab qo'yilgan keshbek (cashback_used) ni mijozga qaytaramiz (refund).
             if order.cashback_used and order.cashback_used > 0:
                 user = await uow.users.get_for_update(order.customer_id)
                 if user is not None:
-                    user.cashback_balance = (
-                        Decimal(user.cashback_balance or 0) + Decimal(order.cashback_used or 0)
-                    ).quantize(Decimal("0.01"))
-                    await uow.users.add(user)
+                    await post_ledger(
+                        uow, subject=user,
+                        account=LedgerAccount.CASHBACK, kind=LedgerKind.CASHBACK_REFUND,
+                        delta=Decimal(order.cashback_used or 0),
+                        order_id=order.id,
+                        reason="Buyurtma bekor qilindi — keshbek qaytarildi",
+                        idempotency_key=f"order:{order.id}:cashback_refund",
+                    )
 
             order.status = OrderStatus.CANCELLED
             order.cancelled_at = datetime.now(timezone.utc)
@@ -579,19 +606,37 @@ class OrderService:
                 #   3) Kuryer NAQD balansi: += total_amount (mijozdan olingan naqd)
                 user = await uow.users.get_for_update(order.customer_id)
                 if user is not None:
+                    # 1) Keshbek topildi (earn). Balans + jurnal — post_ledger orqali.
                     if order.cashback_earned and order.cashback_earned > 0:
-                        user.cashback_balance = (
-                            Decimal(user.cashback_balance or 0) + Decimal(order.cashback_earned or 0)
-                        ).quantize(Decimal("0.01"))
-                    new_bottles = (
-                        int(user.bottles_balance or 0)
-                        + int(order.bottles_issued or 0)
-                        - int(order.bottles_returned or 0)
-                    )
-                    if new_bottles < 0:
-                        new_bottles = 0
-                    user.bottles_balance = new_bottles
-                    await uow.users.add(user)
+                        await post_ledger(
+                            uow, subject=user,
+                            account=LedgerAccount.CASHBACK, kind=LedgerKind.CASHBACK_EARN,
+                            delta=Decimal(order.cashback_earned or 0),
+                            order_id=order.id,
+                            reason="Buyurtma yetkazildi — keshbek qo'shildi",
+                            idempotency_key=f"order:{order.id}:cashback_earn",
+                        )
+                    # 2) Idishlar: berildi (+) va bo'sh idish qaytarib olindi (−).
+                    #    Ikki alohida yozuv — audit aniqroq ("3 berdik, 2 oldik").
+                    issued = int(order.bottles_issued or 0)
+                    returned = int(order.bottles_returned or 0)
+                    if issued > 0:
+                        await post_ledger(
+                            uow, subject=user,
+                            account=LedgerAccount.BOTTLES, kind=LedgerKind.BOTTLE_ISSUE,
+                            delta=issued, order_id=order.id,
+                            reason="Buyurtma yetkazildi — idish berildi",
+                            idempotency_key=f"order:{order.id}:bottle_issue",
+                        )
+                    if returned > 0:
+                        await post_ledger(
+                            uow, subject=user,
+                            account=LedgerAccount.BOTTLES, kind=LedgerKind.BOTTLE_RETURN,
+                            delta=-returned, order_id=order.id,
+                            reason="Buyurtma yetkazildi — bo'sh idish qaytarib olindi",
+                            idempotency_key=f"order:{order.id}:bottle_return",
+                            clamp_zero=True,
+                        )
                 # Kuryer qo'lidagi naqd — mijoz to'lagan summa (total_amount).
                 # Keshbek bilan qoplangan qism naqd EMAS, total_amount allaqachon
                 # net (items_total − cashback_used), shuning uchun aynan shu qo'shiladi.
@@ -600,10 +645,13 @@ class OrderService:
                 cash = Decimal(order.total_amount or 0)
                 if cash > 0:
                     locked_courier = await uow.couriers.get_for_update(courier.id) or courier
-                    locked_courier.cash_balance = (
-                        Decimal(locked_courier.cash_balance or 0) + cash
-                    ).quantize(Decimal("0.01"))
-                    await uow.couriers.add(locked_courier)
+                    await post_ledger(
+                        uow, subject=locked_courier,
+                        account=LedgerAccount.CASH, kind=LedgerKind.CASH_COLLECT,
+                        delta=cash, order_id=order.id,
+                        reason="Buyurtma yetkazildi — mijozdan naqd olindi",
+                        idempotency_key=f"order:{order.id}:cash_collect",
+                    )
             await uow.orders.add(order)
             await uow.session.refresh(order, attribute_names=["courier", "customer", "items"])
             return order

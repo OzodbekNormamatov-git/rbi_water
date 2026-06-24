@@ -15,6 +15,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
+from Data.unit_of_work import UnitOfWork
 from Domain.constants import (
     LAT_MAX, LAT_MIN, LON_MAX, LON_MIN,
     MAX_ADDRESS_DETAILS_LENGTH, MAX_ADDRESS_LABEL_LENGTH,
@@ -88,6 +89,31 @@ class OperatorOrderOut(BaseModel):
     created_by_operator_id: int
 
 
+class RecentOrderItemOut(BaseModel):
+    """Takror buyurtma uchun bitta mahsulot snapshot'i (buyurtma vaqtidagi)."""
+    food_id: Optional[int] = None
+    food_name: str
+    quantity: int
+    unit_price: Decimal
+
+
+class RecentOrderOut(BaseModel):
+    """Mijozning o'tgan buyurtmasi — operator "takrorlash" uchun ko'radi."""
+    id: int
+    display_number: str
+    status: str
+    status_label: str
+    total_amount: Decimal
+    created_at: Optional[str] = None
+    latitude: float
+    longitude: float
+    address_label: str = ""
+    address_details: str = ""
+    contact_phone: str = ""
+    note: str = ""
+    items: List[RecentOrderItemOut] = []
+
+
 # ---------------------- Endpoints ----------------------
 
 @router.get("/customer-lookup", response_model=CustomerLookupOut)
@@ -119,6 +145,52 @@ async def customer_lookup(
             cashback_balance=Decimal(u.cashback_balance or 0),
             bottles_balance=int(u.bottles_balance or 0),
         )
+
+
+@router.get("/customers/{customer_id}/recent-orders", response_model=List[RecentOrderOut])
+async def customer_recent_orders(
+    customer_id: int,
+    _user: TelegramUser = Depends(operator_required),
+    orders: OrderService = Depends(get_order_service),
+    limit: int = Query(default=5, ge=1, le=20),
+) -> List[RecentOrderOut]:
+    """Mijozning oxirgi buyurtmalari — operator "takrorlash" uchun ko'radi.
+
+    Items snapshot bilan qaytariladi (buyurtma vaqtidagi nom/narx). Operator UI
+    bu itemlarni JORIY katalogga moslab (mavjudlik/narx/min) takrorlaydi —
+    mavjud `POST /orders` quvuridan o'tadi (bitta yozish yo'li).
+    """
+    sf = orders._sf  # type: ignore[attr-defined]
+    async with UnitOfWork(sf) as uow:
+        rows = await uow.orders.list_by_customer_paginated(
+            customer_id, limit=limit, offset=0,
+        )
+        return [
+            RecentOrderOut(
+                id=o.id,
+                display_number=order_display_number(o),
+                status=o.status.name,
+                status_label=o.status.label_uz,
+                total_amount=o.total_amount,
+                created_at=o.created_at.isoformat() if o.created_at else None,
+                latitude=float(o.delivery_latitude),
+                longitude=float(o.delivery_longitude),
+                address_label=o.address_label or "",
+                address_details=o.address_details or "",
+                contact_phone=o.contact_phone or "",
+                note=o.note or "",
+                items=[
+                    RecentOrderItemOut(
+                        food_id=it.food_id,
+                        food_name=it.food_name,
+                        quantity=it.quantity,
+                        unit_price=it.unit_price,
+                    )
+                    for it in (o.items or [])
+                ],
+            )
+            for o in rows
+        ]
 
 
 @router.post("/orders", response_model=OperatorOrderOut, status_code=status.HTTP_201_CREATED)

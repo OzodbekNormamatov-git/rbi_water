@@ -8,11 +8,13 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
 
 from Data.unit_of_work import UnitOfWork
 from Domain.models.courier import Courier
+from Domain.models.ledger import LedgerAccount, LedgerKind
 from Service.exceptions import (
     EntityNotFoundError,
     InvalidOperationError,
     ValidationError,
 )
+from Service.ledger_posting import post_ledger
 
 # Telefon formati: 9-15 raqam, ixtiyoriy + prefiks (mavjud `UserService` bilan
 # bir xil pattern). `+998901234567` kabi E.164 saqlanadi.
@@ -134,6 +136,7 @@ class CourierService:
 
     async def settle_cash(
         self, courier_id: int, amount: Optional[Decimal] = None,
+        *, operator_id: int | None = None,
     ) -> Courier:
         """Kuryer naqd pulni topshirdi — balansidan ayiramiz (admin "qabul qildim").
 
@@ -164,8 +167,14 @@ class CourierService:
                         "cash_settle_exceeds",
                         context={"available": float(balance)},
                     )
-            courier.cash_balance = (balance - take).quantize(Decimal("0.01"))
-            await uow.couriers.add(courier)
+            # Naqd 0 bo'lsa (topshiradigan narsa yo'q) — yozuv qoldirmaymiz.
+            if take > 0:
+                await post_ledger(
+                    uow, subject=courier,
+                    account=LedgerAccount.CASH, kind=LedgerKind.CASH_SETTLE,
+                    delta=-take, operator_id=operator_id,
+                    reason="Kuryer naqd pulni topshirdi (admin qabul qildi)",
+                )
             return courier
 
     async def total_cash_outstanding(self) -> tuple[float, int]:
