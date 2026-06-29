@@ -232,6 +232,8 @@ alembic upgrade head
 - `POST /api/me/addresses/{id}/default` — default belgilash
 - `DELETE /api/me/addresses/{id}` — o'chirish (default o'chirilsa keyingisi default bo'ladi)
 - `GET /api/config` — TTL'lar, brand, status katalogi
+- `GET /api/geocode?q=` — manzil/ko'cha/mahalla qidirish (Photon/OSM, kalitsiz)
+- `GET /api/reverse-geocode?lat=&lon=` — x,y → o'qiladigan manzil (ko'cha/uy/mahalla)
 - `GET /api/products` — mahsulotlar ro'yxati
 - `GET /api/products/{id}` — bitta mahsulot
 - `GET /api/cart` / `POST /api/cart/items` / `DELETE /api/cart` — server-side savatcha

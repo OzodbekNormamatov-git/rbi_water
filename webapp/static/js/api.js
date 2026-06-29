@@ -103,6 +103,16 @@ export const api = {
     return r;
   },
 
+  // ----- Geocoding (manzil qidiruv + teskari) -----
+  geocode: (q, { lat, lon } = {}) => {
+    const sp = new URLSearchParams({ q });
+    if (lat != null) sp.set("lat", String(lat));
+    if (lon != null) sp.set("lon", String(lon));
+    return request(`/api/geocode?${sp}`);
+  },
+  reverseGeocode: (lat, lon) =>
+    request(`/api/reverse-geocode?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`),
+
   cart:        () => request("/api/cart"),  // sync — har gal fresh
   setCartItem: async (food_id, quantity) => {
     const r = await request("/api/cart/items", { method: "POST", body: { food_id, quantity } });

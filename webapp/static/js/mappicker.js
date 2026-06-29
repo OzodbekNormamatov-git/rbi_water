@@ -14,6 +14,8 @@
 // bosilsa, pin shu joyga ko'chadi.
 
 import { requestLocation, hapticImpact } from "./telegram.js";
+import { api } from "./api.js";
+import { escapeHtml } from "./format.js";
 
 const LEAFLET_CSS = "https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css";
 const LEAFLET_JS  = "https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js";
@@ -21,35 +23,8 @@ const LEAFLET_JS  = "https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"
 // Default markaz: Toshkent
 const FALLBACK = { latitude: 41.3111, longitude: 69.2797 };
 
-// Nominatim — OpenStreetMap'ning bepul geocoding xizmati (kalit yo'q).
-// Foydalanish siyosati: 1 so'rov/sekund (operator UI bilan bir xil endpoint).
-const NOMINATIM_URL = "https://nominatim.openstreetmap.org/search";
-
-/**
- * Manzilni qidirish — Nominatim orqali.
- * @param {string} query — qidiruv matni
- * @param {{lat?: number, lon?: number}} [center] — viewbox markazi (mahalliy natijalarni ustun qilish uchun)
- * @returns {Promise<Array<{display_name: string, lat: string, lon: string}>>}
- */
-async function _geocode(query, { lat, lon } = {}) {
-  const sp = new URLSearchParams({
-    q: query,
-    format: "json",
-    limit: "6",
-    "accept-language": "uz,ru,en",
-  });
-  // Joriy xarita markazi atrofidagi natijalarni ustun qilish (Tashkent atrofida —
-  // ~50km radius). Yo'q bo'lsa, butun dunyo bo'yicha qidiriladi.
-  if (Number.isFinite(lat) && Number.isFinite(lon)) {
-    const d = 0.5;
-    sp.set("viewbox", `${lon - d},${lat + d},${lon + d},${lat - d}`);
-  }
-  const res = await fetch(`${NOMINATIM_URL}?${sp}`, {
-    headers: { "Accept": "application/json" },
-  });
-  if (!res.ok) throw new Error("Qidiruv xatosi");
-  return await res.json();
-}
+// Manzil qidiruv — bizning backend (Photon/OSM) orqali. Ko'cha/uy/mahalla
+// nomlarini topadi, kalit kerak emas. Natija: [{title, subtitle, latitude, longitude}].
 
 let _leafletLoading = null;
 
@@ -114,6 +89,7 @@ export async function openMapPicker({ initial, title = "Manzilni tanlang" } = {}
         <div class="map-picker__map" id="mp-map"></div>
         <div class="map-picker__pin">📍</div>
         <div class="map-picker__hint">Xaritani surib, pin'ni manzilingizga to'g'rilang.</div>
+        <div class="map-picker__address" id="mp-address" style="font-size:13px;font-weight:600;text-align:center;min-height:18px;padding:0 12px"></div>
         <div class="map-picker__coord" id="mp-coord"></div>
         <div class="map-picker__foot">
           <button class="btn btn--secondary" id="mp-locate" type="button">📍 Mening joyim</button>
@@ -133,13 +109,37 @@ export async function openMapPicker({ initial, title = "Manzilni tanlang" } = {}
     }).addTo(map);
 
     const coordEl = backdrop.querySelector("#mp-coord");
+    const addressEl = backdrop.querySelector("#mp-address");
     const fmt = (n) => n.toFixed(5);
+    let lastAddress = "";
     const refresh = () => {
       const c = map.getCenter();
       coordEl.textContent = `Lat: ${fmt(c.lat)}, Lon: ${fmt(c.lng)}`;
     };
     refresh();
     map.on("move", refresh);
+
+    // Pin to'xtaganda — manzilni teskari aniqlaymiz (ko'cha/uy/mahalla ko'rinsin).
+    // x,y baribir saqlanadi; bu faqat odam o'qiydigan nom.
+    let revTimer = null;
+    const refreshAddress = () => {
+      const c = map.getCenter();
+      addressEl.textContent = "📍 manzil aniqlanmoqda…";
+      addressEl.style.opacity = "0.6";
+      clearTimeout(revTimer);
+      revTimer = setTimeout(async () => {
+        try {
+          const r = await api.reverseGeocode(c.lat, c.lng);
+          lastAddress = (r && r.address) || "";
+          addressEl.textContent = lastAddress || "📍 manzil nomi topilmadi (joylashuv saqlanadi)";
+          addressEl.style.opacity = lastAddress ? "1" : "0.6";
+        } catch {
+          addressEl.textContent = "";
+        }
+      }, 500);
+    };
+    refreshAddress();
+    map.on("moveend", refreshAddress);
 
     let cancelled = false;
     const finish = (result) => {
@@ -154,9 +154,13 @@ export async function openMapPicker({ initial, title = "Manzilni tanlang" } = {}
       if (e.target === backdrop) finish(null);
     });
 
-    backdrop.querySelector("#mp-ok").addEventListener("click", () => {
+    backdrop.querySelector("#mp-ok").addEventListener("click", async () => {
       const c = map.getCenter();
-      finish({ latitude: c.lat, longitude: c.lng });
+      let address = lastAddress;
+      if (!address) {
+        try { const r = await api.reverseGeocode(c.lat, c.lng); address = (r && r.address) || ""; } catch { /* x,y baribir qaytadi */ }
+      }
+      finish({ latitude: c.lat, longitude: c.lng, address });
     });
 
     const locateBtn = backdrop.querySelector("#mp-locate");
@@ -169,66 +173,60 @@ export async function openMapPicker({ initial, title = "Manzilni tanlang" } = {}
     map.on("dragstart", () => { userTouchedMap = true; });
     map.on("zoomstart", () => { userTouchedMap = true; });
 
-    // ---------------------- SEARCH (Nominatim) ----------------------
+    // ---------------------- SEARCH (Photon/OSM — ko'cha/uy/mahalla) ----------------------
 
     const searchEl = backdrop.querySelector("#mp-search");
     const searchBtn = backdrop.querySelector("#mp-search-btn");
     const resultsEl = backdrop.querySelector("#mp-results");
+    let searchTimer = null;
 
     const doSearch = async () => {
       const q = (searchEl.value || "").trim();
-      if (q.length < 3) {
-        // Juda qisqa — Nominatim noaniq natija qaytaradi va policy ham buzilishi mumkin
-        return;
-      }
-      searchBtn.disabled = true;
-      const originalBtnText = searchBtn.textContent;
-      searchBtn.textContent = "⏳";
+      if (q.length < 2) { resultsEl.hidden = true; return; }
       resultsEl.hidden = false;
       resultsEl.innerHTML = `<div class="map-picker__result-status">Qidirilmoqda…</div>`;
       try {
         const center = map.getCenter();
-        const results = await _geocode(q, { lat: center.lat, lon: center.lng });
+        const results = await api.geocode(q, { lat: center.lat, lon: center.lng });
         if (!results || !results.length) {
           resultsEl.innerHTML = `<div class="map-picker__result-status">Topilmadi. Boshqa nom bilan urinib ko'ring.</div>`;
           return;
         }
-        resultsEl.innerHTML = results.map((r) => {
-          const parts = (r.display_name || "").split(",");
-          const title = parts[0] || r.display_name;
-          const sub = parts.slice(1).join(",").trim();
-          return `
-            <button type="button" class="map-picker__result" data-lat="${r.lat}" data-lon="${r.lon}">
-              <div class="map-picker__result-title">${title}</div>
-              <div class="map-picker__result-sub">${sub}</div>
-            </button>
-          `;
-        }).join("");
+        resultsEl.innerHTML = results.map((r, i) => `
+            <button type="button" class="map-picker__result" data-idx="${i}">
+              <div class="map-picker__result-title">${escapeHtml(r.title)}</div>
+              <div class="map-picker__result-sub">${escapeHtml(r.subtitle)}</div>
+            </button>`).join("");
         resultsEl.querySelectorAll(".map-picker__result").forEach((el) => {
           el.addEventListener("click", () => {
-            const lat = Number(el.dataset.lat);
-            const lon = Number(el.dataset.lon);
-            if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
-            map.setView([lat, lon], 17);
+            const r = results[Number(el.dataset.idx)];
+            if (!r || !Number.isFinite(r.latitude) || !Number.isFinite(r.longitude)) return;
+            map.setView([r.latitude, r.longitude], 17);
             userTouchedMap = true;  // tanlangan manzilni fon GPS bilan almashtirmaylik
+            if (r.address) {
+              lastAddress = r.address;
+              addressEl.textContent = r.address;
+              addressEl.style.opacity = "1";
+            }
             resultsEl.hidden = true;
             hapticImpact("light");
           });
         });
       } catch (e) {
-        resultsEl.innerHTML = `<div class="map-picker__result-status">${e.message || "Qidiruv xatosi"}</div>`;
-      } finally {
-        searchBtn.disabled = false;
-        searchBtn.textContent = originalBtnText;
+        resultsEl.innerHTML = `<div class="map-picker__result-status">${escapeHtml(e.message || "Qidiruv xatosi")}</div>`;
       }
     };
 
+    // Jonli avtocomplete (yozayotganda) + tugma + Enter.
+    searchEl.addEventListener("input", () => {
+      clearTimeout(searchTimer);
+      const q = (searchEl.value || "").trim();
+      if (q.length < 2) { resultsEl.hidden = true; return; }
+      searchTimer = setTimeout(doSearch, 350);
+    });
     searchBtn.addEventListener("click", doSearch);
     searchEl.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        doSearch();
-      }
+      if (e.key === "Enter") { e.preventDefault(); clearTimeout(searchTimer); doSearch(); }
     });
     // Xarita bosilsa — natijalar yashirinadi (yo'ldan olib tashlash)
     backdrop.querySelector("#mp-map").addEventListener("pointerdown", () => {

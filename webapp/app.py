@@ -40,6 +40,7 @@ from webapp.routes import addresses as address_routes
 from webapp.routes import cart as cart_routes
 from webapp.routes import config as config_routes
 from webapp.routes import debug_log as debug_log_routes
+from webapp.routes import geocode as geocode_routes
 from webapp.routes import me as me_routes
 from webapp.routes import orders as order_routes
 from webapp.routes import products as product_routes
@@ -226,6 +227,7 @@ def create_app(*, container: AppContainer, cors_origins: List[str]) -> FastAPI:
     app.include_router(order_routes.router)
     app.include_router(config_routes.router)
     app.include_router(cart_routes.router)
+    app.include_router(geocode_routes.router)
     # Debug — frontend loglar terminalda ko'rinsin. Production'da o'chiriladi
     # (env DEBUG_FRONTEND_LOGS=false default). Frontend baribir 404'ga toqat qiladi.
     from config import get_settings as _get_settings

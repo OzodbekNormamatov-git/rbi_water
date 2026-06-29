@@ -162,6 +162,16 @@ export const api = {
       body: amount != null ? { amount } : {},
     }),
 
+  // Geocoding (manzil qidiruv + teskari) — operator xaritasi uchun
+  geocode: (q, { lat, lon } = {}) => {
+    const sp = new URLSearchParams({ q });
+    if (lat != null) sp.set("lat", String(lat));
+    if (lon != null) sp.set("lon", String(lon));
+    return request(`/api/geocode?${sp}`);
+  },
+  reverseGeocode: (lat, lon) =>
+    request(`/api/reverse-geocode?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`),
+
   // Operator endpointlari (admin OR operator kira oladi)
   // Ism yoki telefon (qisman) bo'yicha mijoz qidirish — bir nechta moslik.
   operatorCustomerSearch: (q, { limit } = {}) => {

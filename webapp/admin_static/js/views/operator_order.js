@@ -38,23 +38,8 @@ function _loadLeaflet() {
   return _leafletLoading;
 }
 
-// Nominatim — OpenStreetMap'ning bepul geocoding xizmati (kalit yo'q).
-// Foydalanish siyosati: 1 so'rov/sekund (operator UI uchun yetarli).
-const NOMINATIM = "https://nominatim.openstreetmap.org/search";
-
-async function _geocode(query, { lat, lon } = {}) {
-  const sp = new URLSearchParams({
-    q: query, format: "json", limit: "6", "accept-language": "uz,ru,en",
-  });
-  // Toshkent atrofini ustun qilish — viewbox markazi xaritaning hozirgi joyi
-  if (lat && lon) {
-    const d = 0.5; // ~50 km radius
-    sp.set("viewbox", `${lon - d},${lat + d},${lon + d},${lat - d}`);
-  }
-  const res = await fetch(`${NOMINATIM}?${sp}`, { headers: { "Accept": "application/json" } });
-  if (!res.ok) throw new Error("Qidiruv xatosi");
-  return await res.json();
-}
+// Manzil qidiruv + teskari geocoding — bizning backend (Photon/OSM) orqali
+// (api.geocode / api.reverseGeocode). Ko'cha/uy/mahalla nomlarini topadi.
 
 function openMapPicker(initial) {
   return new Promise(async (resolve) => {
@@ -70,13 +55,14 @@ function openMapPicker(initial) {
           <button class="map-picker-close" type="button" aria-label="Yopish">×</button>
         </div>
         <div class="map-picker-search">
-          <input class="input" id="mp-search" type="text"
-                 placeholder="Ko'cha yoki mahalla (masalan: Chilonzor, Amir Temur ko'chasi)" />
+          <input class="input" id="mp-search" type="search" autocomplete="off"
+                 placeholder="Ko'cha, mahalla yoki joy (masalan: Chilonzor, Bunyodkor ko'chasi)" />
           <button class="btn btn--secondary" id="mp-search-btn" type="button">🔍</button>
         </div>
         <div class="map-picker-results" id="mp-results" hidden></div>
         <div class="map-picker-map" id="mp-map"></div>
         <div class="map-picker-pin">📍</div>
+        <div id="mp-address" style="font-size:13px;font-weight:600;text-align:center;min-height:18px;padding:4px 12px 0"></div>
         <div class="map-picker-coord" id="mp-coord"></div>
         <div class="map-picker-foot">
           <button class="btn btn--secondary" id="mp-locate" type="button">📍 Mening joyim</button>
@@ -89,17 +75,38 @@ function openMapPicker(initial) {
       .setView([start.latitude, start.longitude], 14);
     L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
     const coordEl = backdrop.querySelector("#mp-coord");
+    const addressEl = backdrop.querySelector("#mp-address");
+    let lastAddress = "";
     const refresh = () => {
       const c = map.getCenter();
       coordEl.textContent = `Lat: ${c.lat.toFixed(5)}, Lon: ${c.lng.toFixed(5)}`;
     };
     refresh(); map.on("move", refresh);
+
+    // Pin to'xtaganda — manzilni teskari aniqlash (ko'cha/uy/mahalla ko'rinsin).
+    let revTimer = null;
+    const refreshAddress = () => {
+      const c = map.getCenter();
+      addressEl.textContent = "📍 aniqlanmoqda…";
+      clearTimeout(revTimer);
+      revTimer = setTimeout(async () => {
+        try {
+          const r = await api.reverseGeocode(c.lat, c.lng);
+          lastAddress = (r && r.address) || "";
+          addressEl.textContent = lastAddress || "📍 nom topilmadi (joylashuv saqlanadi)";
+        } catch { addressEl.textContent = ""; }
+      }, 500);
+    };
+    refreshAddress(); map.on("moveend", refreshAddress);
+
     const finish = (r) => { map.remove(); backdrop.remove(); resolve(r); };
     backdrop.querySelector(".map-picker-close").addEventListener("click", () => finish(null));
     backdrop.addEventListener("click", (e) => { if (e.target === backdrop) finish(null); });
-    backdrop.querySelector("#mp-ok").addEventListener("click", () => {
+    backdrop.querySelector("#mp-ok").addEventListener("click", async () => {
       const c = map.getCenter();
-      finish({ latitude: c.lat, longitude: c.lng });
+      let address = lastAddress;
+      if (!address) { try { const r = await api.reverseGeocode(c.lat, c.lng); address = (r && r.address) || ""; } catch { /* x,y baribir */ } }
+      finish({ latitude: c.lat, longitude: c.lng, address });
     });
     backdrop.querySelector("#mp-locate").addEventListener("click", () => {
       if (!navigator.geolocation) return;
@@ -109,53 +116,52 @@ function openMapPicker(initial) {
       );
     });
 
-    // ----- Qidiruv (Nominatim)
+    // ----- Qidiruv (Photon/OSM — ko'cha/uy/mahalla)
     const searchEl = backdrop.querySelector("#mp-search");
     const searchBtn = backdrop.querySelector("#mp-search-btn");
     const resultsEl = backdrop.querySelector("#mp-results");
+    let searchTimer = null;
 
     const doSearch = async () => {
       const q = searchEl.value.trim();
-      if (q.length < 3) return;
-      searchBtn.disabled = true;
+      if (q.length < 2) { resultsEl.hidden = true; return; }
       resultsEl.hidden = false;
       resultsEl.innerHTML = `<div class="map-picker-result-loading">Qidirilmoqda…</div>`;
       try {
         const center = map.getCenter();
-        const results = await _geocode(q, { lat: center.lat, lon: center.lng });
+        const results = await api.geocode(q, { lat: center.lat, lon: center.lng });
         if (!results || !results.length) {
           resultsEl.innerHTML = `<div class="map-picker-result-empty">Topilmadi. Boshqa nom bilan urinib ko'ring.</div>`;
           return;
         }
-        resultsEl.innerHTML = results.map((r, i) => {
-          const parts = (r.display_name || "").split(",");
-          const title = parts[0] || r.display_name;
-          const sub = parts.slice(1).join(",").trim();
-          return `
-            <div class="map-picker-result" data-lat="${r.lat}" data-lon="${r.lon}">
-              <div class="map-picker-result-title">${title}</div>
-              <div class="map-picker-result-sub">${sub}</div>
-            </div>
-          `;
-        }).join("");
+        resultsEl.innerHTML = results.map((r, i) => `
+            <div class="map-picker-result" data-idx="${i}">
+              <div class="map-picker-result-title">${escapeHtml(r.title)}</div>
+              <div class="map-picker-result-sub">${escapeHtml(r.subtitle)}</div>
+            </div>`).join("");
         resultsEl.querySelectorAll(".map-picker-result").forEach((el) => {
           el.addEventListener("click", () => {
-            const lat = Number(el.dataset.lat);
-            const lon = Number(el.dataset.lon);
-            map.setView([lat, lon], 17);
+            const r = results[Number(el.dataset.idx)];
+            if (!r || !Number.isFinite(r.latitude) || !Number.isFinite(r.longitude)) return;
+            map.setView([r.latitude, r.longitude], 17);
+            if (r.address) { lastAddress = r.address; addressEl.textContent = r.address; }
             resultsEl.hidden = true;
           });
         });
       } catch (e) {
-        resultsEl.innerHTML = `<div class="map-picker-result-empty">Xatolik: ${e.message}</div>`;
-      } finally {
-        searchBtn.disabled = false;
+        resultsEl.innerHTML = `<div class="map-picker-result-empty">Xatolik: ${escapeHtml(e.message || "")}</div>`;
       }
     };
 
+    searchEl.addEventListener("input", () => {
+      clearTimeout(searchTimer);
+      const q = searchEl.value.trim();
+      if (q.length < 2) { resultsEl.hidden = true; return; }
+      searchTimer = setTimeout(doSearch, 350);
+    });
     searchBtn.addEventListener("click", doSearch);
     searchEl.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") { e.preventDefault(); doSearch(); }
+      if (e.key === "Enter") { e.preventDefault(); clearTimeout(searchTimer); doSearch(); }
     });
     // Xaritani bossa — natijalar yashirinadi (yo'ldan olib tashlash)
     backdrop.querySelector(".map-picker-map").addEventListener("mousedown", () => {
@@ -527,6 +533,11 @@ export async function renderOperatorOrder(root) {
     if (!r) return;
     location = r;
     addrStatus.innerHTML = `✅ <code>${r.latitude.toFixed(5)}, ${r.longitude.toFixed(5)}</code>`;
+    // Geocoded ko'cha/uy/mahalla — ko'rsatamiz + tafsilot bo'sh bo'lsa to'ldiramiz.
+    if (r.address) {
+      addrStatus.innerHTML += `<div style="margin-top:2px">📍 ${escapeHtml(r.address)}</div>`;
+      if (!addrDetailsEl.value.trim()) addrDetailsEl.value = r.address;
+    }
   });
 
   // ----- 4/5. Bonus card visibility — faqat mijozda keshbek bo'lsa ko'rinadi.

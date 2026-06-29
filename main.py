@@ -31,6 +31,7 @@ from Service.broadcast_service import BroadcastService
 from Service.cart_service import CartService
 from Service.courier_service import CourierService
 from Service.food_service import FoodService
+from Service.geocode_service import GeocodeService
 from Service.ledger_service import LedgerService
 from Service.notification_service import NotificationService
 from Service.order_service import OrderService
@@ -66,6 +67,13 @@ async def _run() -> None:
     ledger_service = LedgerService(db.session_factory)
     analytics_service = AnalyticsService(db.session_factory)
     settings_service = SettingsService(db.session_factory)
+    geocode_service = GeocodeService(
+        search_url=settings.geocode_search_url,
+        reverse_url=settings.geocode_reverse_url,
+        user_agent=settings.geocode_user_agent,
+        bias_lat=settings.geocode_bias_lat,
+        bias_lon=settings.geocode_bias_lon,
+    )
 
     # Botlar
     customer_bot = make_customer_bot(settings.customer_bot_token)
@@ -154,6 +162,7 @@ async def _run() -> None:
         analytics_service=analytics_service,
         broadcast_service=broadcast_service,
         settings_service=settings_service,
+        geocode_service=geocode_service,
         customer_bot_token=settings.customer_bot_token,
         admin_bot_token=settings.admin_bot_token,
         admin_telegram_ids=tuple(settings.admin_ids),

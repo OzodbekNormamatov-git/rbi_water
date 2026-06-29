@@ -17,6 +17,7 @@ from Service.broadcast_service import BroadcastService
 from Service.cart_service import CartService
 from Service.courier_service import CourierService
 from Service.food_service import FoodService
+from Service.geocode_service import GeocodeService
 from Service.ledger_service import LedgerService
 from Service.notification_service import NotificationService
 from Service.order_service import OrderService
@@ -42,6 +43,7 @@ class AppContainer:
     analytics_service: AnalyticsService
     broadcast_service: BroadcastService
     settings_service: SettingsService
+    geocode_service: GeocodeService
     customer_bot_token: str
     admin_bot_token: str           # Admin Mini App initData verification uchun
     brand_name: str
@@ -108,6 +110,10 @@ def get_brand_name(c: AppContainer = Depends(_container)) -> str:
     return c.brand_name
 
 
+def get_geocode_service(c: AppContainer = Depends(_container)) -> GeocodeService:
+    return c.geocode_service
+
+
 # ---------------------- Telegram Mini App auth ----------------------
 # `Authorization: tma <initData>` — Telegram'ning rasmiy tavsiyasi.
 # Frontend `WebApp.initData` ni xuddi shu ko'rinishda yuboradi.
@@ -141,3 +147,32 @@ def telegram_user(
             detail="Avtorizatsiya muvaffaqiyatsiz. Mini App'ni qaytadan oching.",
             headers={"WWW-Authenticate": 'tma realm="webapp"'},
         )
+
+
+def any_telegram_user(
+    request: Request,
+    authorization: Optional[str] = Header(default=None),
+    c: AppContainer = Depends(_container),
+) -> TelegramUser:
+    """Mijoz YOKI admin Mini App'idan kelgan initData'ni qabul qiladi.
+
+    Geocoding kabi umumiy (ikkala panelga ham kerak) endpointlar uchun — initData
+    customer_bot yoki admin_bot tokeni bilan imzolangan bo'lsa, qabul qilamiz."""
+    if not authorization or not authorization.lower().startswith(_AUTH_PREFIX):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authorization header yo'q (kutilgan: 'tma <initData>').",
+            headers={"WWW-Authenticate": 'tma realm="webapp"'},
+        )
+    init_data = authorization[len(_AUTH_PREFIX):].strip()
+    for token in (c.customer_bot_token, c.admin_bot_token):
+        try:
+            return verify_init_data(init_data, bot_token=token)
+        except InitDataError:
+            continue
+    log.info("any_telegram_user: initData rad etildi")
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Avtorizatsiya muvaffaqiyatsiz. Mini App'ni qaytadan oching.",
+        headers={"WWW-Authenticate": 'tma realm="webapp"'},
+    )

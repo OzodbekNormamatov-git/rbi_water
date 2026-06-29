@@ -61,6 +61,20 @@ class Settings(BaseSettings):
     locale: str = Field(default="uz")
     rate_limit_per_minute: int = Field(default=60)
 
+    # ------------------------- Geocoding (xarita qidiruvi) -------------------------
+    # Manzil qidiruv + teskari geocoding (x,y -> ko'cha/uy/mahalla). Bepul, OSM:
+    #   * search  — Photon (avtocomplete, struktura). Default: ommaviy instans.
+    #   * reverse — Nominatim. Default: ommaviy instans.
+    # PRODUCTION: o'z serveringizda Photon/Nominatim ko'tarib, bu URL'larni
+    # o'zgartiring (rate-limit/ishonchlilik uchun). Kalit kerak emas.
+    geocode_search_url: str = Field(default="https://photon.komoot.io/api")
+    geocode_reverse_url: str = Field(default="https://nominatim.openstreetmap.org/reverse")
+    # Nominatim siyosati uchun User-Agent (ideal: aloqa email bilan).
+    geocode_user_agent: str = Field(default="rbi-water-delivery-bot")
+    # Natijalarni shu hududga moyil qilish (Toshkent markazi) + davlat filtri.
+    geocode_bias_lat: float = Field(default=41.3111)
+    geocode_bias_lon: float = Field(default=69.2797)
+
     # ------------------------- Debug / diagnostika -------------------------
     # Production'da `false` — frontend'ning `/api/debug/log` endpoint'i o'chiriladi.
     # Local development'da `true` qilib qo'yib, brauzer'dan GPS va boshqa

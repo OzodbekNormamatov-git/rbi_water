@@ -230,7 +230,9 @@ export function renderCheckout(root) {
       title: "Yetkazib berish nuqtasi",
     });
     if (!result) return;
-    applyAddress(result, "", "");
+    // Geocoded ko'cha/uy/mahalla nomi — address_details ga avto-to'ldiriladi
+    // (mijoz tahrirlashi/xonadon qo'shishi mumkin). x,y baribir saqlanadi.
+    applyAddress(result, "", result.address || "");
   }
 
   // ----- Cashback widget — admin tomonidan o'chirilgan bo'lsa, butunlay yashiriladi.
