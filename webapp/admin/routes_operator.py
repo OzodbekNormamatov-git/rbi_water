@@ -23,7 +23,7 @@ from Domain.constants import (
     MAX_QUANTITY_PER_ITEM, MIN_QUANTITY_PER_ITEM,
 )
 from Service.exceptions import (
-    DomainError, EntityNotFoundError, InvalidOperationError, ValidationError,
+    DomainError, InvalidOperationError, ValidationError,
 )
 from Service.notification_service import NotificationService
 from Service.order_display import order_display_number
@@ -48,6 +48,16 @@ class CustomerLookupOut(BaseModel):
     id: Optional[int] = None
     full_name: Optional[str] = None
     phone_number: Optional[str] = None
+    has_started_bot: bool = False
+    cashback_balance: Decimal = Decimal("0.00")
+    bottles_balance: int = 0
+
+
+class CustomerHit(BaseModel):
+    """Qidiruv natijasidagi bitta mijoz (ism/telefon bo'yicha)."""
+    id: int
+    full_name: str
+    phone_number: str
     has_started_bot: bool = False
     cashback_balance: Decimal = Decimal("0.00")
     bottles_balance: int = 0
@@ -146,12 +156,37 @@ async def customer_lookup(
         )
 
 
+@router.get("/customer-search", response_model=List[CustomerHit])
+async def customer_search(
+    q: str = Query(min_length=2, max_length=64),
+    _user: TelegramUser = Depends(operator_required),
+    users: UserService = Depends(get_user_service),
+    limit: int = Query(default=8, ge=1, le=20),
+) -> List[CustomerHit]:
+    """Operator mijozni ism YOKI telefon (qisman, oxirgi raqamlar) bo'yicha qidiradi.
+    Bir nechta moslik ro'yxatini qaytaradi — operator tanlaydi."""
+    sf = users._sf  # type: ignore[attr-defined]
+    async with UnitOfWork(sf) as uow:
+        rows = await uow.users.search_name_or_phone(q, limit=limit)
+        return [
+            CustomerHit(
+                id=u.id,
+                full_name=u.full_name,
+                phone_number=u.phone_number,
+                has_started_bot=bool(u.has_started_bot),
+                cashback_balance=Decimal(u.cashback_balance or 0),
+                bottles_balance=int(u.bottles_balance or 0),
+            )
+            for u in rows
+        ]
+
+
 @router.get("/customers/{customer_id}/recent-orders", response_model=List[RecentOrderOut])
 async def customer_recent_orders(
     customer_id: int,
     _user: TelegramUser = Depends(operator_required),
     orders: OrderService = Depends(get_order_service),
-    limit: int = Query(default=5, ge=1, le=20),
+    limit: int = Query(default=3, ge=1, le=20),
 ) -> List[RecentOrderOut]:
     """Mijozning oxirgi buyurtmalari — operator "takrorlash" uchun ko'radi.
 

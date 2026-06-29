@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from typing import Optional, Sequence
 
@@ -45,6 +46,25 @@ class UserRepository(BaseRepository[User]):
             self._apply_search_filter(select(User), query).order_by(User.created_at.desc())
         )
         stmt = stmt.offset(offset).limit(limit)
+        res = await self._session.execute(stmt)
+        return res.scalars().all()
+
+    async def search_name_or_phone(self, q: str, *, limit: int = 8) -> Sequence[User]:
+        """Operator qidiruvi — ism YOKI telefon (qisman, oxirgi raqamlar ham).
+
+        Telefon uchun q'dan faqat raqamlar ajratiladi (probel/`+`/`-` ahamiyatsiz),
+        shuning uchun "90 12" yoki "1234" (oxirgi raqamlar) ham topadi. Trigram
+        GIN indekslar tufayli katta bazada ham tez."""
+        q = (q or "").strip()
+        if len(q) < 2:
+            return []
+        conds = [User.full_name.ilike(f"%{q}%")]
+        digits = re.sub(r"\D", "", q)
+        if len(digits) >= 2:
+            conds.append(User.phone_number.ilike(f"%{digits}%"))
+        stmt = self._active_only(
+            select(User).where(or_(*conds)).order_by(User.created_at.desc()).limit(limit)
+        )
         res = await self._session.execute(stmt)
         return res.scalars().all()
 

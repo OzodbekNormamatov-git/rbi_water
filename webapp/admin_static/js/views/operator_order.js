@@ -175,19 +175,25 @@ export async function renderOperatorOrder(root) {
 
   root.innerHTML = `
     <div class="card" style="margin-bottom:14px">
-      <h3 class="card__title">1. Mijoz ma'lumotlari</h3>
+      <h3 class="card__title">1. Mijoz</h3>
       <div class="form-row">
-        <label class="label" for="op-phone">Telefon (mijozdan so'rang)</label>
-        <div style="display:flex;gap:8px">
-          <input class="input" id="op-phone" type="tel" placeholder="+998901234567" inputmode="tel" style="flex:1" />
-          <button class="btn btn--secondary" id="op-lookup" type="button">🔍 Tekshirish</button>
-        </div>
-        <div class="muted" id="op-lookup-status" style="font-size:12px;margin-top:4px"></div>
+        <label class="label" for="op-search">Mijozni qidirish — ism yoki telefon</label>
+        <input class="input" id="op-search" type="search" autocomplete="off"
+               placeholder="Masalan: Ali  yoki  1234 (oxirgi raqamlar)" />
+        <div class="muted" style="font-size:12px;margin-top:4px">Kamida 2 belgi yozing — mosliklar avtomatik chiqadi.</div>
       </div>
+      <div id="op-results"></div>
+      <div id="op-selected" hidden></div>
       <div id="op-recent"></div>
-      <div class="form-row" id="op-name-row" hidden>
-        <label class="label" for="op-name">Ism</label>
-        <input class="input" id="op-name" type="text" placeholder="Mijozning ismi" />
+      <div id="op-new" hidden>
+        <div class="form-row">
+          <label class="label" for="op-name">Ism (yangi mijoz)</label>
+          <input class="input" id="op-name" type="text" placeholder="Mijozning ismi" />
+        </div>
+        <div class="form-row">
+          <label class="label" for="op-newphone">Telefon</label>
+          <input class="input" id="op-newphone" type="tel" inputmode="tel" placeholder="+998901234567" />
+        </div>
       </div>
     </div>
 
@@ -237,12 +243,13 @@ export async function renderOperatorOrder(root) {
   `;
 
   // Refs
-  const phoneEl = root.querySelector("#op-phone");
-  const lookupBtn = root.querySelector("#op-lookup");
-  const lookupStatus = root.querySelector("#op-lookup-status");
+  const searchEl = root.querySelector("#op-search");
+  const resultsEl = root.querySelector("#op-results");
+  const selectedEl = root.querySelector("#op-selected");
   const recentEl = root.querySelector("#op-recent");
-  const nameRow = root.querySelector("#op-name-row");
+  const newWrap = root.querySelector("#op-new");
   const nameEl = root.querySelector("#op-name");
+  const newPhoneEl = root.querySelector("#op-newphone");
   const productsEl = root.querySelector("#op-products");
   const cartSummary = root.querySelector("#op-cart-summary");
   const cartCountEl = root.querySelector("#op-cart-count");
@@ -259,43 +266,104 @@ export async function renderOperatorOrder(root) {
   const submitBtn = root.querySelector("#op-submit");
   const summaryEl = root.querySelector("#op-summary");
 
-  // ----- 1. Customer lookup
-  async function doLookup() {
-    const phone = phoneEl.value.trim();
-    if (phone.length < 4) return toast("Telefon raqami juda qisqa", "error");
-    lookupBtn.disabled = true;
-    lookupStatus.textContent = "Qidirilmoqda…";
-    try {
-      const r = await api.operatorCustomerLookup(phone);
-      customerSearched = true;
-      if (r.found) {
-        customer = r;
-        lookupStatus.innerHTML = `✅ <b>${escapeHtml(r.full_name)}</b> — eski mijoz` +
-          (r.has_started_bot ? " (botda)" : " (botsiz)");
-        nameRow.hidden = true;
-        nameEl.value = r.full_name;
-        // Auto-fill contact phone
-        if (!contactEl.value) contactEl.value = r.phone_number;
-        updateBonusCard();
-        // Oxirgi buyurtmalarni ko'rsatamiz — operator bittada takrorlay oladi.
-        loadRecentOrders(r.id);
-      } else {
-        customer = null;
-        lookupStatus.textContent = "❗️ Yangi mijoz — ismni kiriting";
-        nameRow.hidden = false;
-        nameEl.focus();
-        if (!contactEl.value) contactEl.value = phone;
-        recentEl.innerHTML = "";
-        updateBonusCard();
-      }
-    } catch (e) {
-      lookupStatus.innerHTML = `<span style="color:var(--brand-danger)">${escapeHtml(e.message)}</span>`;
-    } finally {
-      lookupBtn.disabled = false;
-    }
+  // ----- 1. Mijoz qidirish (ism yoki telefon, qisman — oxirgi raqamlar ham)
+  let searchTimer = null;
+
+  function clearSelection() {
+    customer = null;
+    customerSearched = false;
+    selectedEl.hidden = true;
+    selectedEl.innerHTML = "";
+    recentEl.innerHTML = "";
+    newWrap.hidden = true;
+    updateBonusCard();
   }
-  lookupBtn.addEventListener("click", doLookup);
-  phoneEl.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); doLookup(); } });
+
+  function renderResults(list, q) {
+    const rows = (list || []).map((c, i) => `
+      <button type="button" data-pick="${i}"
+        style="display:block;width:100%;text-align:left;border:1px solid var(--border,#e5e7eb);border-radius:10px;padding:8px 10px;margin-top:6px;background:var(--surface,#fff);cursor:pointer">
+        <b>${escapeHtml(c.full_name)}</b>
+        <span class="muted" style="font-size:13px"> · ${escapeHtml(c.phone_number)}</span>
+        ${Number(c.cashback_balance) > 0 ? `<span class="muted" style="font-size:12px"> · 💰 ${fmtMoney(c.cashback_balance)}</span>` : ""}
+        ${c.has_started_bot ? "" : `<span class="muted" style="font-size:12px"> · botsiz</span>`}
+      </button>`).join("");
+    const newBtn = `
+      <button type="button" data-new="1"
+        style="display:block;width:100%;text-align:left;border:1px dashed var(--brand-primary,#3b82f6);border-radius:10px;padding:8px 10px;margin-top:6px;background:var(--brand-tint,#f0f7ff);cursor:pointer;color:var(--brand-deep,#1d4ed8)">
+        ➕ Yangi mijoz qo'shish${q ? ` ("${escapeHtml(q)}")` : ""}
+      </button>`;
+    resultsEl.innerHTML = (rows || `<div class="muted" style="font-size:13px;padding:6px">Mijoz topilmadi.</div>`) + newBtn;
+    resultsEl.querySelectorAll("[data-pick]").forEach((b) =>
+      b.addEventListener("click", () => selectCustomer(list[Number(b.dataset.pick)])));
+    resultsEl.querySelector("[data-new]").addEventListener("click", () => startNewCustomer(q));
+  }
+
+  async function doSearch(q) {
+    resultsEl.innerHTML = `<div class="muted" style="font-size:13px;padding:6px">Qidirilmoqda…</div>`;
+    let list;
+    try {
+      list = await api.operatorCustomerSearch(q, { limit: 8 });
+    } catch (e) {
+      resultsEl.innerHTML = `<div class="muted" style="font-size:13px;padding:6px;color:var(--brand-danger)">${escapeHtml(e.message || "Xatolik")}</div>`;
+      return;
+    }
+    renderResults(list, q);
+  }
+
+  searchEl.addEventListener("input", () => {
+    clearTimeout(searchTimer);
+    const q = searchEl.value.trim();
+    if (q.length < 2) { resultsEl.innerHTML = ""; return; }
+    searchTimer = setTimeout(() => doSearch(q), 300);
+  });
+
+  function selectCustomer(c) {
+    if (!c) return;
+    customer = c;
+    customerSearched = true;
+    searchEl.value = "";
+    resultsEl.innerHTML = "";
+    newWrap.hidden = true;
+    selectedEl.hidden = false;
+    selectedEl.innerHTML = `
+      <div style="display:flex;align-items:center;gap:8px;border:1px solid var(--brand-success,#16a34a);border-radius:10px;padding:8px 10px;background:var(--brand-tint,#f0fff4)">
+        <div style="flex:1">
+          ✅ <b>${escapeHtml(c.full_name)}</b>
+          <span class="muted" style="font-size:13px"> · ${escapeHtml(c.phone_number)}</span>
+          ${c.has_started_bot ? "" : `<span class="muted" style="font-size:12px"> · botsiz</span>`}
+        </div>
+        <button type="button" class="btn btn--xs btn--secondary" data-change>✖ o'zgartirish</button>
+      </div>`;
+    selectedEl.querySelector("[data-change]").addEventListener("click", () => {
+      clearSelection();
+      searchEl.focus();
+    });
+    if (!contactEl.value) contactEl.value = c.phone_number;
+    updateBonusCard();
+    // Oxirgi 3 ta buyurtmasini ko'rsatamiz — operator bittada takrorlay oladi.
+    loadRecentOrders(c.id);
+  }
+
+  function startNewCustomer(q) {
+    customer = null;
+    customerSearched = true;
+    resultsEl.innerHTML = "";
+    selectedEl.hidden = true;
+    recentEl.innerHTML = "";
+    newWrap.hidden = false;
+    // Qidiruv raqamlardan iborat bo'lsa — telefonni oldindan to'ldiramiz; aks holda ism.
+    const digits = (q || "").replace(/\D/g, "");
+    if (digits.length >= 4) {
+      if (!newPhoneEl.value) newPhoneEl.value = (q || "").trim().startsWith("+") ? q.trim() : ("+" + digits);
+      nameEl.focus();
+    } else {
+      if (!nameEl.value) nameEl.value = (q || "").trim();
+      nameEl.focus();
+    }
+    if (!contactEl.value && newPhoneEl.value) contactEl.value = newPhoneEl.value;
+    updateBonusCard();
+  }
 
   // ----- 2. Products
   (async () => {
@@ -423,7 +491,7 @@ export async function renderOperatorOrder(root) {
     recentEl.innerHTML = `<div class="muted" style="font-size:12px;margin-top:8px">Oxirgi buyurtmalar yuklanmoqda…</div>`;
     let list;
     try {
-      list = await api.operatorRecentOrders(customerId, { limit: 5 });
+      list = await api.operatorRecentOrders(customerId, { limit: 3 });
     } catch (e) {
       recentEl.innerHTML = "";  // jim — takror buyurtma ixtiyoriy qulaylik
       return;
@@ -488,11 +556,11 @@ export async function renderOperatorOrder(root) {
   // ----- 6. Submit
   submitBtn.addEventListener("click", async () => {
     if (busy) return;
-    const phone = phoneEl.value.trim();
-    const name = (nameEl.value || (customer && customer.full_name) || "").trim();
-    if (phone.length < 4) return toast("Telefon raqamini kiriting", "error");
-    if (!customerSearched) return toast("Avval mijozni tekshiring (🔍 tugmasi)", "error");
+    const phone = (customer ? customer.phone_number : newPhoneEl.value).trim();
+    const name = (customer ? customer.full_name : nameEl.value).trim();
+    if (!customerSearched) return toast("Avval mijozni qidiring va tanlang (yoki yangi qo'shing)", "error");
     if (name.length < 2) return toast("Mijozning ismini kiriting", "error");
+    if (phone.length < 4) return toast("Telefon raqamini kiriting", "error");
     if (cart.size === 0) return toast("Hech qaysi mahsulot tanlanmagan", "error");
     if (!location) return toast("Manzilni xaritadan tanlang", "error");
     const contact = contactEl.value.trim();
