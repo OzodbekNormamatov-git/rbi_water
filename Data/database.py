@@ -144,9 +144,8 @@ _MIGRATIONS: tuple[str, ...] = (
         last_number INTEGER NOT NULL DEFAULT 0
     )""",
 
-    # ------ v11 (BEKOR QILINGAN): global min_order_quantity — v13'da per-mahsulot
-    # `foods.min_quantity` bilan almashtirildi. ADD entry olib tashlangan, chunki
-    # model'da ustun yo'q — fresh DB'da orphan ustun yaratmaslik kerak.
+    # (v11 raqami ishlatilmaydi — global min_order_quantity g'oyasi v13'dagi
+    #  per-mahsulot `foods.min_quantity` bilan almashtirilgan.)
 
     # ------ v12: Kuryer naqd pul balansi ------
     # Courier.cash_balance — kuryer qo'lidagi naqd (DELIVERED'da += total_amount).

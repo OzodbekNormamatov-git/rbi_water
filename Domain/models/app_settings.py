@@ -41,6 +41,3 @@ class AppSettings(Base, TimestampMixin):
     max_cashback_usage_ratio: Mapped[Decimal] = mapped_column(
         Numeric(5, 2), nullable=False, default=Decimal("1.00"),
     )
-
-    # Eslatma: ilgari bu yerda global `min_order_quantity` bor edi — endi
-    # per-mahsulot `Food.min_quantity` bilan almashtirilgan (migration 0013).

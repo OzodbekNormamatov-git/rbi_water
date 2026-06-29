@@ -75,8 +75,8 @@ export function applyTheme() {
 }
 
 // ---------------------- MainButton ----------------------
-// hideMainButton — CTA pattern'ga o'tilgach view'lar tozalashda ishlatadi.
-// (showMainButton/setMainButtonLoading olib tashlandi — CTA moduli boshqaradi.)
+// Asosiy CTA tugmasi `cta.js` moduli orqali boshqariladi; bu yerda faqat
+// view almashganda Telegram MainButton'ni yashirish kerak.
 
 let _mainHandler = () => {};
 
