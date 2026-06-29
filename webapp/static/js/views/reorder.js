@@ -12,7 +12,7 @@
 
 import { api, ApiError } from "../api.js";
 import { cart } from "../state.js";
-import { fmtMoney, escapeHtml } from "../format.js";
+import { fmtMoney, escapeHtml, iconFor } from "../format.js";
 import {
   hapticNotification,
   hideBackButton,
@@ -22,14 +22,6 @@ import {
 import { back, go } from "../router.js";
 import { toast } from "../toast.js";
 import { showCTA, hideCTA, setCTALoading } from "../cta.js";
-
-function iconFor(label) {
-  const l = (label || "").toLowerCase();
-  if (l.includes("uy") || l.includes("home")) return "🏠";
-  if (l.includes("ish") || l.includes("work") || l.includes("ofis") || l.includes("office")) return "💼";
-  if (l.includes("dam") || l.includes("dacha")) return "🌳";
-  return "📍";
-}
 
 export function renderReorder(root, { orderId }) {
   document.getElementById("screen-title").textContent = "Takroriy buyurtma";

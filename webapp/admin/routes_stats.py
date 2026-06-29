@@ -19,7 +19,6 @@ router = APIRouter(prefix="/api/admin/stats", tags=["admin:stats"])
 
 class TodaySummary(BaseModel):
     orders_count: int
-    revenue: float          # back-compat alias = cash_revenue
     cash_revenue: float     # naqd kuryerga yetib kelgan
     cashback_used: float    # keshbek bilan to'langan qism
     cashback_earned: float  # yangi yaratilgan liability
@@ -170,7 +169,6 @@ async def get_dashboard(
     return DashboardOut(
         today=TodaySummary(
             orders_count=today_finance["orders_count"],
-            revenue=today_finance["cash_revenue"],          # back-compat
             cash_revenue=today_finance["cash_revenue"],
             cashback_used=today_finance["cashback_used"],
             cashback_earned=today_finance["cashback_earned"],

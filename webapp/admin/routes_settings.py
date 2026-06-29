@@ -17,7 +17,7 @@ from Service.analytics_service import AnalyticsService
 from Service.exceptions import DomainError, ValidationError
 from Service.settings_service import SettingsService
 from webapp.admin.auth import admin_required
-from webapp.deps import get_analytics_service, _container
+from webapp.deps import get_analytics_service, get_settings_service
 
 router = APIRouter(prefix="/api/admin/settings", tags=["admin:settings"])
 
@@ -53,21 +53,10 @@ class CashbackOverviewOut(BaseModel):
 
 # ---------------------- Endpoints ----------------------
 
-def _settings_service(c=Depends(_container)) -> SettingsService:
-    # Container'da `SettingsService` 1-darajali emas (kech qo'shilgan) — atribut
-    # mavjud bo'lmasa, on-demand factory bilan o'tib turamiz.
-    svc = getattr(c, "settings_service", None)
-    if svc is None:
-        from Service.settings_service import SettingsService
-        sf = c.order_service._sf  # type: ignore[attr-defined]
-        svc = SettingsService(sf)
-    return svc
-
-
 @router.get("", response_model=CashbackSettingsOut)
 async def get_settings(
     _=Depends(admin_required),
-    settings: SettingsService = Depends(_settings_service),
+    settings: SettingsService = Depends(get_settings_service),
 ) -> CashbackSettingsOut:
     cfg = await settings.get_cashback_config()
     return CashbackSettingsOut(
@@ -81,7 +70,7 @@ async def get_settings(
 async def update_settings(
     payload: CashbackSettingsIn,
     _=Depends(admin_required),
-    settings: SettingsService = Depends(_settings_service),
+    settings: SettingsService = Depends(get_settings_service),
 ) -> CashbackSettingsOut:
     try:
         cfg = await settings.update_cashback(

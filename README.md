@@ -52,11 +52,12 @@ Asosiy patternlar:
 
 ### 🎯 Marketing va Mijozlarni ushlab qolish
 
-- **Keshbek tizimi** — har sotuvdan **1.5%** keshbek (sozlanadi: `Domain/constants.py:DEFAULT_CASHBACK_PERCENT`)
-  - 100 so'mga yaxlitlanadi (mijozga foydali — FLOOR emas, CEIL emas, lekin to'liq yuzliklarga)
-  - Bitta buyurtmada eng ko'pi 50% gacha qoplash mumkin (sozlanadi: `MAX_CASHBACK_USAGE_RATIO`)
+- **Keshbek tizimi** — har sotuvdan keshbek (default **1.5%**; live qiymat admin Mini App "Sozlamalar" orqali `AppSettings` jadvalida, dastlabki seed `Domain/constants.py:DEFAULT_CASHBACK_PERCENT`)
+  - har 100 so'mga FLOOR (pastga yaxlitlanadi; masalan 708 → 700)
+  - Bitta buyurtmada qoplash chegarasi sozlanadi (default **100%** — to'liq qoplash; live qiymat `AppSettings.max_cashback_usage_ratio`, seed `DEFAULT_MAX_CASHBACK_USAGE_RATIO = 1.00`)
   - Buyurtma yaratilganda darhol ushlab qo'yiladi (escrow); bekor qilinsa avtomatik qaytariladi
   - DELIVERED bo'lganda yangi keshbek qo'shiladi
+  - Har bir balans o'zgarishi append-only **ledger** (`ledger_entries`) ga yoziladi — to'liq audit + tiklash
 - **Ommaviy xabarnomalar (Rassilka)** — barcha mijozlar bazasiga DM. Background asyncio task; sent/failed jonli kuzatiladi; bitta vaqtda faqat bittasi ishlaydi; admin to'xtatishi mumkin; Telegram rate-limit (`BROADCAST_SEND_DELAY_SECONDS = 0.05`)
 
 ## Talablar
@@ -96,7 +97,7 @@ python main.py
 Manzillar:
 - `http://localhost:8080/` — foydalanuvchi Mini App (Telegram'dan ochish kerak)
 - `http://localhost:8080/admin/` — admin paneli (Telegram'dan ochish kerak)
-- `http://localhost:8080/docs` — FastAPI Swagger (auth talab qiladi)
+- `http://localhost:8080/docs` — FastAPI Swagger (auth talab qilmaydi; production'da yopib qo'yish mumkin)
 - `http://localhost:8080/healthz` — health check
 
 ## Buyurtma hayot tsikli
@@ -253,8 +254,14 @@ alembic upgrade head
 - `GET/POST/PATCH/DELETE /api/admin/products` — CRUD
 - `GET /api/admin/couriers` / `PATCH /api/admin/couriers/{id}`
 - `GET /api/admin/customers?q=...` — qidirish + xarid statistikasi + balans
-- `POST /api/admin/customers/{id}/cashback` — keshbek balansini ±
-- `POST /api/admin/customers/{id}/bottles` — idishlar balansini ±
+- `POST /api/admin/customers/{id}/cashback` — keshbek balansini ± (ledger yozadi)
+- `POST /api/admin/customers/{id}/bottles` — idishlar balansini ± (ledger yozadi)
+- `GET /api/admin/customers/{id}/ledger` / `GET /api/admin/couriers/{id}/ledger` — moliyaviy jurnal tarixi
+- `GET /api/admin/settings` / `PATCH /api/admin/settings` — cashback konfiguratsiyasi (live)
+- `GET /api/admin/settings/cashback` — cashback dasturining moliyaviy ko'rinishi
+- `GET /api/admin/operator/customer-lookup?phone=` — operator: mijozni telefonda topish
+- `GET /api/admin/operator/customers/{id}/recent-orders` — operator: oxirgi buyurtmalar (takrorlash uchun)
+- `POST /api/admin/operator/orders` — operator nomidan buyurtma yaratish
 
 ## Xavfsizlik
 
@@ -276,7 +283,8 @@ alembic upgrade head
 - `alembic` — migrations
 - `slowapi` — rate limiting
 - `pydantic` + `pydantic-settings` — validatsiya va konfiguratsiya
-- `PyJWT` (foydalanish: backup admin auth uchun, hozir initData ishlatiladi)
+- `python-dotenv` — `.env` o'qish (pydantic-settings uchun)
+- `python-multipart` — rasm yuklash (broadcast + mahsulot rasmi, multipart/form-data)
 - `tzdata` — Windows uchun zoneinfo
 
 Frontend qaramligi (CDN orqali yuklanadi, pip kerak emas):

@@ -24,7 +24,6 @@ class FrontLog(BaseModel):
     tag: str = Field(default="gps", max_length=32)
     msg: str = Field(max_length=500)
     t_ms: int = Field(default=0, ge=0, le=10_000_000)
-    state: Any = None
     extra: Any = None
 
 
@@ -33,8 +32,8 @@ async def frontend_log(payload: FrontLog, request: Request) -> dict:
     """Frontend qisqacha log yuboradi — terminalga formatlangan chiqaramiz."""
     ua = (request.headers.get("user-agent") or "")[:80]
     log.info(
-        "[%s T+%dms] %s | state=%s | extra=%s | ua=%s",
+        "[%s T+%dms] %s | extra=%s | ua=%s",
         payload.tag, payload.t_ms, payload.msg,
-        payload.state, payload.extra, ua,
+        payload.extra, ua,
     )
     return {"ok": True}

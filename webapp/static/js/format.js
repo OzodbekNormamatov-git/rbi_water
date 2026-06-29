@@ -32,3 +32,12 @@ export function fmtCount(value) {
   if (!Number.isFinite(n)) return String(value);
   return Math.round(n).toLocaleString("ru-RU").replace(/,/g, " ");
 }
+
+// Manzil yorlig'i ("Uy", "Ishxona", ...) uchun emoji ikona.
+export function iconFor(label) {
+  const l = (label || "").toLowerCase();
+  if (l.includes("uy") || l.includes("home")) return "🏠";
+  if (l.includes("ish") || l.includes("work") || l.includes("ofis") || l.includes("office")) return "💼";
+  if (l.includes("dam") || l.includes("dacha")) return "🌳";
+  return "📍";
+}

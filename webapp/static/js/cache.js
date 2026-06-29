@@ -29,12 +29,6 @@ export function invalidate(prefix) {
   }
 }
 
-/** Hammasini tozalash (user logout, sesiya tugashi, va h.k.). */
-export function clearAll() {
-  _cache.clear();
-  _inflight.clear();
-}
-
 /**
  * Memoize: cache bo'lsa qaytaradi; bo'lmasa fn() chaqiradi va saqlaydi.
  * Parallel bir xil so'rovlarni avtomatik dedupe qiladi (one-flight).
@@ -55,17 +49,4 @@ export async function memoize(key, fn, ttlMs) {
   })();
   _inflight.set(key, p);
   return p;
-}
-
-/** SWR yondashuvi: tez cache qaytaradi, fonda yangilaydi (UI uchun). */
-export function swr(key, fn, ttlMs, onUpdate) {
-  const cached = get(key);
-  // Fon yangilash — har doim
-  fn().then((value) => {
-    set(key, value, ttlMs);
-    if (onUpdate && JSON.stringify(value) !== JSON.stringify(cached)) {
-      try { onUpdate(value); } catch (_) {}
-    }
-  }).catch(() => {});
-  return cached;
 }

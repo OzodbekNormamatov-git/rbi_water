@@ -15,9 +15,6 @@ MAX_NOTE_LENGTH: Final[int] = 500
 # Eslatma: minimal buyurtma endi har mahsulotda alohida (`Food.min_quantity`,
 # 1..MAX_QUANTITY_PER_ITEM). Ilgari global DEFAULT_MIN_ORDER_QUANTITY bor edi.
 
-# Telefon raqam regexi (xalqaro format)
-PHONE_REGEX: Final[str] = r"^\+?\d{9,15}$"
-
 # Latitude/longitude chegaralari
 LAT_MIN: Final[float] = -90.0
 LAT_MAX: Final[float] = 90.0
@@ -34,8 +31,6 @@ MAX_ADDRESS_DETAILS_LENGTH: Final[int] = 200
 # ishlatiladi. Live qiymatlar admin tomonidan o'zgartiriladi va DB'dan o'qiladi.
 DEFAULT_CASHBACK_PERCENT: Final[float] = 1.5
 DEFAULT_MAX_CASHBACK_USAGE_RATIO: Final[float] = 1.00  # to'liq qoplash mumkin
-# Eski kod uchun shim — ish vaqtida ishlatilmaydi (`AppSettings` ustun chaqiriladi).
-MAX_CASHBACK_USAGE_RATIO: Final[float] = DEFAULT_MAX_CASHBACK_USAGE_RATIO
 # Keshbekni hisoblashning birligi (mijoz QO'LGA OLAYOTGAN keshbek qadami).
 # Misol: 1.5% of 47 230 = 708.45 → 700 (har 100 so'mga floor — mijozga foydali).
 CASHBACK_ROUND_UNIT: Final[int] = 100

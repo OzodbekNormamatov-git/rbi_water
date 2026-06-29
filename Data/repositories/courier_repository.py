@@ -18,13 +18,6 @@ class CourierRepository(BaseRepository[Courier]):
         )
         return res.scalar_one_or_none()
 
-    async def get_active_by_telegram_id(self, telegram_id: int) -> Optional[Courier]:
-        """Faqat aktiv (deleted_at IS NULL) kuryerni qaytaradi — bot oqimlari uchun."""
-        res = await self._session.execute(
-            self._active_only(select(Courier).where(Courier.telegram_id == telegram_id))
-        )
-        return res.scalar_one_or_none()
-
     async def get_for_update(self, courier_id: int) -> Optional[Courier]:
         """Pessimistic row-lock — naqd balansni atomik yangilash uchun (settle)."""
         res = await self._session.execute(
@@ -43,14 +36,6 @@ class CourierRepository(BaseRepository[Courier]):
         res = await self._session.execute(stmt)
         row = res.first()
         return float(row[0] or 0), int(row[1] or 0)
-
-    async def list_active(self) -> Sequence[Courier]:
-        """Aktiv (arxivlanmagan) + is_active=True — kuryer guruh notification uchun."""
-        stmt = self._active_only(
-            select(Courier).where(Courier.is_active.is_(True))
-        )
-        res = await self._session.execute(stmt)
-        return res.scalars().all()
 
     async def list_all_ordered(self) -> Sequence[Courier]:
         """Admin uchun: avval aktivlar, keyin ism bo'yicha. Faqat soft-active."""

@@ -154,7 +154,8 @@ class FoodService:
             if price is not None:
                 food.price = _coerce_price(price)
             if image_file_id is not None:
-                food.image_file_id = image_file_id
+                # Bo'sh string (rasm o'chirildi) — DB'da NULL bo'lsin (toza semantika).
+                food.image_file_id = image_file_id or None
             if is_available is not None:
                 food.is_available = is_available
             if min_quantity is not None:

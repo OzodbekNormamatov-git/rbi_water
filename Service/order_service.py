@@ -31,7 +31,6 @@ from Service.ledger_posting import post_ledger
 from Service.ledger_service import (
     cap_cashback_usage,
     compute_cashback_for,
-    quantize_cashback,
     quantize_cashback_use,
 )
 from Service.order_display import order_display_number
@@ -146,7 +145,6 @@ class OrderService:
             # Itemlarni yig'amiz va items_total ni hisoblaymiz.
             order_items: List[OrderItem] = []
             items_total = Decimal("0.00")
-            total_qty = 0
             # Faqat QAYTARILADIGAN idishlar yig'indisi (sanalmaydigan tovarlar —
             # pumpa, kuller — `bottles_per_unit=0` bo'lib bu hisobga kirmaydi).
             returnable_bottles = 0
@@ -186,7 +184,6 @@ class OrderService:
                     bottles_per_unit=bpu,
                 )
                 items_total += food.price * item.quantity
-                total_qty += int(item.quantity)
                 returnable_bottles += int(item.quantity) * bpu
                 order_items.append(line)
 
@@ -290,7 +287,11 @@ class OrderService:
                     idempotency_key=f"order:{order.id}:cashback_spend",
                 )
 
-            return await uow.orders.get_full(order.id)  # type: ignore[return-value]
+            # Order allaqachon flush qilingan (order.id mavjud) va to'liq
+            # yuklangan — get_full bilan ortiqcha SELECT o'rniga refresh qilamiz
+            # (None-dereference yo'li ham bartaraf etiladi, transition'lar kabi).
+            await uow.session.refresh(order, attribute_names=["courier", "customer", "items"])
+            return order
 
     async def get(self, order_id: int) -> Order:
         async with UnitOfWork(self._sf) as uow:
@@ -582,7 +583,13 @@ class OrderService:
             courier = await uow.couriers.get_by_telegram_id(courier_telegram_id)
             if courier is None:
                 raise InvalidOperationError("courier_not_registered")
-            order = await uow.orders.get_full(order_id)
+            # DELIVERED — pul/idish/naqd balanslari yangilanadi, shuning uchun
+            # order qatorini LOCK qilamiz (parallel "Yetkazib berildi" klik race
+            # oldini olish, claim_by_courier kabi). Boshqa transitsiyalar yengil.
+            if stamp_delivered:
+                order = await uow.orders.get_for_update(order_id)
+            else:
+                order = await uow.orders.get_full(order_id)
             if order is None:
                 raise EntityNotFoundError("order_not_found")
             if order.courier_id != courier.id:

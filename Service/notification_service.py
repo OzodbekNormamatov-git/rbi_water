@@ -1,28 +1,14 @@
-"""DEPRECATED: turli komponentlar `Service.notifications` package'idan keladi.
+"""NotificationService uchun barqaror import nuqtasi (fasad).
 
-Eski importlar ishlashda davom etishi uchun shim:
+Amalda butun kod (main.py, webapp, botlar) `NotificationService`ni shu
+moduldan import qiladi — bu kanonik yo'l:
+
     from Service.notification_service import NotificationService
-        ↓
-    from Service.notifications import NotificationService
 
-Yangi kodda to'g'ridan-to'g'ri `Service.notifications` package'ini ishlatish tavsiya etiladi.
+Haqiqiy implementatsiya `Service/notifications/service.py` da; formatterlar
+(`Service/notifications/formatters.py`) o'sha package ichida ishlatiladi va
+bu yerdan re-export qilinmaydi (tashqi import qiluvchi yo'q edi).
 """
 from Service.notifications import NotificationService
-from Service.notifications.formatters import (
-    format_customer_timeline,
-    format_dm_for_courier,
-    format_group_claimed,
-    format_group_new,
-    make_courier_dm_kb as courier_dm_kb,
-    make_group_new_kb as group_new_kb,
-)
 
-__all__ = [
-    "NotificationService",
-    "format_customer_timeline",
-    "format_dm_for_courier",
-    "format_group_claimed",
-    "format_group_new",
-    "courier_dm_kb",
-    "group_new_kb",
-]
+__all__ = ["NotificationService"]

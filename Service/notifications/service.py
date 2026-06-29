@@ -284,18 +284,3 @@ class NotificationService:
                     "Adminga ogohlantirish yuborib bo'lmadi tg=%s: %s "
                     "(admin admin_botga /start bosganmi?)", admin_id, e,
                 )
-
-    async def notify_admins_new_order(self, order: Order) -> None:
-        """ESKI USUL — har buyurtma uchun adminga xabar. Yangi kod chaqirmaydi
-        (foydalanuvchi bu xabarlarni o'chirishni so'ragan). Kerak bo'lsa qaytadan ulang.
-        """
-        text = (
-            f"🆕 Yangi buyurtma {order_display_number(order)}\n"
-            f"Mijoz: {order.customer.full_name} ({order.contact_phone})\n"
-            f"Jami: {order.total_amount} so'm"
-        )
-        for admin_id in self._admin_telegram_ids:
-            try:
-                await self._admin_bot.send_message(chat_id=admin_id, text=text)
-            except TelegramAPIError as e:
-                log.warning("Adminga xabar yuborib bo'lmadi tg=%s: %s", admin_id, e)

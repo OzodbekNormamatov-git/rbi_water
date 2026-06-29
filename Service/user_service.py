@@ -73,9 +73,12 @@ class UserService:
           2. Yo'q bo'lsa — sintetik manfiy `telegram_id` bilan yangi mijoz yaratish
              (`has_started_bot=False`, DM xabar yuborilmaydi)
 
-        Mijoz keyinroq botga /start yuborsa, alohida real `telegram_id` bilan
-        ro'yxatdan o'tadi — bu yerda merge qilmaymiz (operator yaratgan mijoz
-        "guest" sifatida qoladi, real registratsiya alohida hisob bo'ladi).
+        Mijoz keyinroq botga /start yuborib ro'yxatdan o'tsa, `register()` bu
+        guest hisobni o'sha real `telegram_id` ga BIRIKTIRADI (identity merge):
+        `user.id` saqlanadi, shuning uchun operator yaratgan buyurtmalar,
+        balanslar va ledger tarixi yo'qolmaydi. Bu faqat `has_started_bot=False`
+        (guest) hisob uchun amal qiladi; telefon faollashgan boshqa hisobga
+        tegishli bo'lsa, `register()` `phone_taken` xatosini beradi.
         """
         full_name = (full_name or "").strip()
         if len(full_name) < 2:

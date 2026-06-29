@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, 
 from pydantic import BaseModel, ConfigDict, Field
 
 from Data.unit_of_work import UnitOfWork
-from Domain.constants import MAX_BOTTLES_PER_UNIT
+from Domain.constants import MAX_BOTTLES_PER_UNIT, MAX_QUANTITY_PER_ITEM
 from Domain.enums import OrderStatus
 from Service.courier_service import CourierService
 from Service.exceptions import (
@@ -76,11 +76,13 @@ async def _save_food_image(file: UploadFile) -> str:
                         detail=f"Rasm juda katta ({_FOOD_MAX_BYTES // 1024 // 1024} MB dan oshmasin).",
                     )
                 f.write(chunk)
-    except HTTPException:
-        # Yarim yozilgan faylni tozalaymiz — orfan qoldirmaymiz.
+    except (HTTPException, OSError):
+        # Hajm cheklovi (HTTPException) yoki disk xatosi (OSError) — yarim
+        # yozilgan faylni tozalaymiz, orfan qoldirmaymiz. Keyin qayta ko'taramiz
+        # (OSError global handler tomonidan 500 ga aylanadi).
         try:
             abs_path.unlink(missing_ok=True)
-        except Exception:
+        except OSError:
             pass
         raise
     # Loyihaga nisbatan path (`media/foods/xxx.jpg`) — Food.image_file_id da
@@ -228,8 +230,12 @@ async def list_orders(
             st = OrderStatus[status_filter.upper()]
         except KeyError:
             raise HTTPException(status_code=400, detail="Noma'lum status")
-    since = datetime.fromisoformat(since_iso) if since_iso else None
-    until = datetime.fromisoformat(until_iso) if until_iso else None
+    # Foydalanuvchi inputi — noto'g'ri ISO sana 500 emas, 400 bersin.
+    try:
+        since = datetime.fromisoformat(since_iso) if since_iso else None
+        until = datetime.fromisoformat(until_iso) if until_iso else None
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Noto'g'ri sana formati (ISO 8601 kutiladi)")
     # Operator role — server tomondan operator ID bilan cheklaymiz.
     operator_filter: Optional[int] = None
     if role_of(user.id, c) == "operator":
@@ -310,8 +316,8 @@ class ProductCreateIn(BaseModel):
     name: str = Field(min_length=2, max_length=120)
     description: str = Field(default="", max_length=2000)
     price: Decimal = Field(gt=0)
-    # Minimal buyurtma soni — 1..999 (service'da ham validatsiya)
-    min_quantity: int = Field(default=1, ge=1, le=999)
+    # Minimal buyurtma soni — 1..MAX_QUANTITY_PER_ITEM (service'da ham validatsiya)
+    min_quantity: int = Field(default=1, ge=1, le=MAX_QUANTITY_PER_ITEM)
     # Qaytariladigan idishlar — 0..MAX (0 = sanalmaydi). Service ham validate qiladi.
     bottles_per_unit: int = Field(default=1, ge=0, le=MAX_BOTTLES_PER_UNIT)
 
@@ -321,7 +327,7 @@ class ProductUpdateIn(BaseModel):
     description: Optional[str] = Field(default=None, max_length=2000)
     price: Optional[Decimal] = Field(default=None, gt=0)
     is_available: Optional[bool] = None
-    min_quantity: Optional[int] = Field(default=None, ge=1, le=999)
+    min_quantity: Optional[int] = Field(default=None, ge=1, le=MAX_QUANTITY_PER_ITEM)
     bottles_per_unit: Optional[int] = Field(default=None, ge=0, le=MAX_BOTTLES_PER_UNIT)
 
 

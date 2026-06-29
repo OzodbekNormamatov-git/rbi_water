@@ -1,19 +1,11 @@
 // Manzillar — saqlangan manzillarni boshqarish (CRUD).
 
 import { api, ApiError } from "../api.js";
-import { escapeHtml } from "../format.js";
+import { escapeHtml, iconFor } from "../format.js";
 import { hapticImpact, hideMainButton, showBackButton, hideBackButton, showConfirm } from "../telegram.js";
 import { back, go } from "../router.js";
 import { openMapPicker } from "../mappicker.js";
 import { toast } from "../toast.js";
-
-function iconFor(label) {
-  const l = (label || "").toLowerCase();
-  if (l.includes("uy") || l.includes("home")) return "🏠";
-  if (l.includes("ish") || l.includes("work") || l.includes("ofis") || l.includes("office")) return "💼";
-  if (l.includes("dam") || l.includes("dacha")) return "🌳";
-  return "📍";
-}
 
 export function renderAddresses(root) {
   document.getElementById("screen-title").textContent = "Manzillarim";

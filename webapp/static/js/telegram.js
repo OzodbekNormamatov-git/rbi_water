@@ -7,8 +7,6 @@ export const isTelegram = !!tg;
 
 export const initData = tg ? tg.initData : "";
 
-export const initDataUnsafe = tg ? tg.initDataUnsafe : {};
-
 export function ready() {
   if (tg) {
     try {
@@ -77,20 +75,8 @@ export function applyTheme() {
 }
 
 // ---------------------- MainButton ----------------------
-
-export function showMainButton(text, onClick, { color, textColor, loading = false } = {}) {
-  if (!tg || !tg.MainButton) return;
-  tg.MainButton.setText(text);
-  if (color) tg.MainButton.color = color;
-  if (textColor) tg.MainButton.textColor = textColor;
-  // har safar yangi handler — eskini olib tashlaymiz
-  tg.MainButton.offClick(_mainHandler);
-  _mainHandler = () => { try { onClick(); } catch (e) { console.error(e); } };
-  tg.MainButton.onClick(_mainHandler);
-  if (loading) tg.MainButton.showProgress(false);
-  else tg.MainButton.hideProgress();
-  tg.MainButton.show();
-}
+// hideMainButton — CTA pattern'ga o'tilgach view'lar tozalashda ishlatadi.
+// (showMainButton/setMainButtonLoading olib tashlandi — CTA moduli boshqaradi.)
 
 let _mainHandler = () => {};
 
@@ -99,12 +85,6 @@ export function hideMainButton() {
   tg.MainButton.hide();
   tg.MainButton.hideProgress();
   tg.MainButton.offClick(_mainHandler);
-}
-
-export function setMainButtonLoading(loading) {
-  if (!tg || !tg.MainButton) return;
-  if (loading) tg.MainButton.showProgress(false);
-  else tg.MainButton.hideProgress();
 }
 
 // ---------------------- BackButton ----------------------
@@ -137,23 +117,11 @@ export function hapticNotification(type = "success") {
   try { tg.HapticFeedback.notificationOccurred(type); } catch (_) {}
 }
 
-export function showAlert(message) {
-  if (tg && tg.showAlert) {
-    return new Promise((res) => tg.showAlert(message, res));
-  }
-  alert(message);
-  return Promise.resolve();
-}
-
 export function showConfirm(message) {
   if (tg && tg.showConfirm) {
     return new Promise((res) => tg.showConfirm(message, (ok) => res(!!ok)));
   }
   return Promise.resolve(confirm(message));
-}
-
-export function close() {
-  if (tg) tg.close();
 }
 
 // ---------------------- Location request ----------------------

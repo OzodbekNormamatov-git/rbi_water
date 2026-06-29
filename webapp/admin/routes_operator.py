@@ -125,7 +125,6 @@ async def customer_lookup(
     """Telefonda mijozni topish — operator yangi buyurtma yaratayotganda
     ma'lumotni avtomatik to'ldirish uchun. Topilmasa `found=false`."""
     # UserService'da get_by_phone yo'q — internal UoW orqali
-    from Data.unit_of_work import UnitOfWork
     sf = users._sf  # type: ignore[attr-defined]
     # phone normalize qilamiz
     import re as _re

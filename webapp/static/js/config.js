@@ -3,7 +3,7 @@
 
 let _config = null;
 
-export const DEFAULTS = {
+const DEFAULTS = {
   brand_name: "Delivery",
   currency_symbol: "so'm",
   locale: "uz",

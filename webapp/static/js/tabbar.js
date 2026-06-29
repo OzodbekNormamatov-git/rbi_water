@@ -18,10 +18,6 @@ const TAB_NAMES = new Set(TABS.map((t) => t.name));
 let _initialized = false;
 let _unsubCart = null;
 
-export function isTabRoute(name) {
-  return TAB_NAMES.has(name);
-}
-
 function _render(active) {
   const el = document.getElementById("tabbar");
   if (!el) return;

@@ -19,14 +19,6 @@ export function fmtDate(iso) {
   } catch { return iso; }
 }
 
-export function fmtTimeOnly(iso) {
-  if (!iso) return "—";
-  try {
-    const d = new Date(iso);
-    return d.toLocaleString("uz-UZ", { hour: "2-digit", minute: "2-digit" });
-  } catch { return iso; }
-}
-
 export function escapeHtml(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",

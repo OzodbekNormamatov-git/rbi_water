@@ -122,7 +122,7 @@ export async function renderCouriers(root) {
         // on/off toggle
         const active = act === "on";
         try {
-          await api.setCourier(id, active);
+          await api.updateCourier(id, { is_active: active });
           toast(active ? "Aktivlashtirildi" : "Noaktiv qilindi", "success");
           reload();
         } catch (e) { toast(e.message, "error"); }

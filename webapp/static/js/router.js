@@ -14,13 +14,6 @@ export function go(name, params = {}) {
   _render();
 }
 
-export function replace(name, params = {}) {
-  if (!routes.has(name)) throw new Error(`Route topilmadi: ${name}`);
-  stack.pop();
-  stack.push({ name, params });
-  _render();
-}
-
 export function back() {
   if (stack.length <= 1) return false;
   stack.pop();
@@ -35,10 +28,6 @@ export function reset(name, params = {}) {
 
 export function current() {
   return stack[stack.length - 1] || null;
-}
-
-export function canGoBack() {
-  return stack.length > 1;
 }
 
 function _render() {

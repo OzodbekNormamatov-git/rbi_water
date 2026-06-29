@@ -76,7 +76,6 @@ export const api = {
     if (offset != null) sp.set("offset", String(offset));
     return request(`/api/admin/broadcasts${sp.toString() ? "?" + sp : ""}`);
   },
-  broadcast:        (id) => request(`/api/admin/broadcasts/${id}`),
   cancelBroadcast:  (id) => request(`/api/admin/broadcasts/${id}/cancel`, { method: "POST" }),
   // Broadcast yaratish: multipart/form-data (matn + ixtiyoriy rasm bitta xabar).
   createBroadcast:  async (formData) => {
@@ -147,7 +146,6 @@ export const api = {
     if (offset != null) sp.set("offset", String(offset));
     return request(`/api/admin/couriers${sp.toString() ? "?" + sp : ""}`);
   },
-  setCourier:      (id, is_active) => request(`/api/admin/couriers/${id}`, { method: "PATCH", body: { is_active } }),
   // Kuryer maydonlarini yangilash — phone_number va/yoki is_active.
   // body: { phone_number?: string|null, is_active?: boolean }
   updateCourier:   (id, body) => request(`/api/admin/couriers/${id}`, { method: "PATCH", body }),
@@ -179,12 +177,6 @@ export const api = {
     if (limit  != null) sp.set("limit",  String(limit));
     if (offset != null) sp.set("offset", String(offset));
     return request(`/api/admin/customers${sp.toString() ? "?" + sp : ""}`);
-  },
-  customerOrders: (id, { limit, offset } = {}) => {
-    const sp = new URLSearchParams();
-    if (limit  != null) sp.set("limit",  String(limit));
-    if (offset != null) sp.set("offset", String(offset));
-    return request(`/api/admin/customers/${id}/orders${sp.toString() ? "?" + sp : ""}`);
   },
   adjustCashback: (id, body) => request(`/api/admin/customers/${id}/cashback`, { method: "POST", body }),
   adjustBottles:  (id, body) => request(`/api/admin/customers/${id}/bottles`, { method: "POST", body }),

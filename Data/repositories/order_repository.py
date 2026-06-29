@@ -72,22 +72,6 @@ class OrderRepository(BaseRepository[Order]):
         )
         return res.scalar_one_or_none()
 
-    async def list_by_customer(self, customer_id: int) -> Sequence[Order]:
-        res = await self._session.execute(
-            self._active_only(self._full_query())
-            .where(Order.customer_id == customer_id)
-            .order_by(Order.created_at.desc())
-        )
-        return res.scalars().all()
-
-    async def list_by_courier(self, courier_id: int) -> Sequence[Order]:
-        res = await self._session.execute(
-            self._active_only(self._full_query())
-            .where(Order.courier_id == courier_id)
-            .order_by(Order.created_at.desc())
-        )
-        return res.scalars().all()
-
     async def list_active_by_courier(self, courier_id: int) -> Sequence[Order]:
         """Tugallanmagan (yetkazilmoqda yoki qabul qilingan) buyurtmalar."""
         res = await self._session.execute(
@@ -125,34 +109,6 @@ class OrderRepository(BaseRepository[Order]):
             )
         )
         return {row[0].name: int(row[1]) for row in res.all()}
-
-    async def revenue_and_count_since(
-        self, since: datetime, exclude_cancelled: bool = True,
-    ) -> tuple[float, int]:
-        """Berilgan vaqtdan beri jami daromad + buyurtma soni."""
-        stmt = self._active_only(select(
-            func.coalesce(func.sum(Order.total_amount), 0),
-            func.count(Order.id),
-        ).where(Order.created_at >= since))
-        if exclude_cancelled:
-            stmt = stmt.where(Order.status != OrderStatus.CANCELLED)
-        res = await self._session.execute(stmt)
-        row = res.first()
-        return float(row[0] or 0), int(row[1] or 0)
-
-    async def revenue_in_window(
-        self, since: datetime, until: datetime, exclude_cancelled: bool = True,
-    ) -> tuple[float, int]:
-        """Bir oraliqdagi NET cash + buyurtma soni — eski API (back-compat)."""
-        stmt = self._active_only(select(
-            func.coalesce(func.sum(Order.total_amount), 0),
-            func.count(Order.id),
-        ).where(Order.created_at >= since, Order.created_at < until))
-        if exclude_cancelled:
-            stmt = stmt.where(Order.status != OrderStatus.CANCELLED)
-        res = await self._session.execute(stmt)
-        row = res.first()
-        return float(row[0] or 0), int(row[1] or 0)
 
     async def finance_in_window(
         self,
@@ -266,42 +222,6 @@ class OrderRepository(BaseRepository[Order]):
             "cashback_used_total": float(row[0] or 0),
             "cashback_earned_total": float(row[1] or 0),
         }
-
-    async def revenue_by_day_since(self, since: datetime) -> list[tuple[str, float, int]]:
-        """Kunlik daromad va buyurtma soni (CANCELLED va arxivlanganlar chiqariladi)."""
-        dialect = self._session.bind.dialect.name if self._session.bind else "postgresql"
-        if dialect == "postgresql":
-            day_expr = func.date_trunc("day", Order.created_at)
-        else:
-            day_expr = func.strftime("%Y-%m-%d", Order.created_at)
-        stmt = self._active_only(select(
-            day_expr.label("day"),
-            func.coalesce(func.sum(Order.total_amount), 0).label("revenue"),
-            func.count(Order.id).label("count"),
-        ).where(
-            Order.created_at >= since,
-            Order.status != OrderStatus.CANCELLED,
-        )).group_by("day").order_by("day")
-        res = await self._session.execute(stmt)
-        return [(str(r.day)[:10], float(r.revenue or 0), int(r.count or 0)) for r in res.all()]
-
-    async def revenue_by_month_since(self, since: datetime) -> list[tuple[str, float, int]]:
-        """Oylik daromad — CANCELLED va arxivlanganlar chiqarib tashlanadi."""
-        dialect = self._session.bind.dialect.name if self._session.bind else "postgresql"
-        if dialect == "postgresql":
-            month_expr = func.to_char(Order.created_at, "YYYY-MM")
-        else:
-            month_expr = func.strftime("%Y-%m", Order.created_at)
-        stmt = self._active_only(select(
-            month_expr.label("month"),
-            func.coalesce(func.sum(Order.total_amount), 0).label("revenue"),
-            func.count(Order.id).label("count"),
-        ).where(
-            Order.created_at >= since,
-            Order.status != OrderStatus.CANCELLED,
-        )).group_by("month").order_by("month")
-        res = await self._session.execute(stmt)
-        return [(str(r.month), float(r.revenue or 0), int(r.count or 0)) for r in res.all()]
 
     async def hourly_counts_for_day(self, day_start: datetime) -> list[tuple[int, int]]:
         """Bir kun ichida soatlik buyurtma soni."""

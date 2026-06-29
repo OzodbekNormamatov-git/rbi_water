@@ -17,13 +17,6 @@ class UserRepository(BaseRepository[User]):
         res = await self._session.execute(select(User).where(User.telegram_id == telegram_id))
         return res.scalar_one_or_none()
 
-    async def get_active_by_telegram_id(self, telegram_id: int) -> Optional[User]:
-        """Faqat aktiv mijozni qaytaradi — bot oqimlari uchun (arxivlangan login qila olmaydi)."""
-        res = await self._session.execute(
-            self._active_only(select(User).where(User.telegram_id == telegram_id))
-        )
-        return res.scalar_one_or_none()
-
     async def get_for_update(self, user_id: int) -> Optional[User]:
         """Pessimistic row-level lock — balans yangilash atomarligi uchun.
         Soft-deleted mijozning ham balansi yangilanishi mumkin (refund kabi)."""
@@ -91,10 +84,21 @@ class UserRepository(BaseRepository[User]):
         return [(str(r.day)[:10], int(r.count or 0)) for r in res.all()]
 
     async def list_all_telegram_ids(self) -> list[int]:
-        """Broadcast uchun — faqat aktiv mijozlar (arxivlanganlar ro'yxatdan).
-        Arxivlangan mijoz bot bilan ishlamasligi mumkin, yuborish behuda urinish."""
+        """Broadcast uchun — faqat real, botda faollashgan aktiv mijozlar.
+
+        Filtrlar:
+          * `_active_only` — arxivlanganlar chiqarib tashlanadi
+          * `telegram_id > 0` — operator yaratgan "guest" mijozlar sintetik
+            manfiy ID ga ega; ularga DM yuborib bo'lmaydi (kafolatli failed)
+          * `has_started_bot` — botga /start qilmaganlarga DM yuborib bo'lmaydi
+        Shu tariqa broadcast.total/failed aniq bo'ladi va behuda API chaqiruv +
+        rate-limit kechikishi sarflanmaydi."""
         res = await self._session.execute(
-            self._active_only(select(User.telegram_id).order_by(User.id.asc()))
+            self._active_only(
+                select(User.telegram_id)
+                .where(User.telegram_id > 0, User.has_started_bot.is_(True))
+                .order_by(User.id.asc())
+            )
         )
         return [int(r) for r in res.scalars().all()]
 
