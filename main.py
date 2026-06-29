@@ -34,6 +34,7 @@ from Service.food_service import FoodService
 from Service.ledger_service import LedgerService
 from Service.notification_service import NotificationService
 from Service.order_service import OrderService
+from Service.reminder_service import ReminderService
 from Service.settings_service import SettingsService
 from Service.user_service import UserService
 from config import get_settings
@@ -73,6 +74,14 @@ async def _run() -> None:
 
     # Broadcast — customer_bot orqali yuboradi (DM mijozlarga).
     broadcast_service = BroadcastService(db.session_factory, customer_bot=customer_bot)
+
+    # Avto-eslatma ("suv kerakmi?") — kunlik fon job, customer_bot orqali DM.
+    reminder_service = ReminderService(
+        db.session_factory,
+        customer_bot=customer_bot,
+        brand_name=settings.brand_name,
+        webapp_url=settings.webapp_public_url or None,
+    )
 
     notifier = NotificationService(
         courier_bot=courier_bot,
@@ -210,6 +219,7 @@ async def _run() -> None:
             _supervised("admin_bot",    lambda: admin_dp.start_polling(admin_bot)),
             _supervised("courier_bot",  lambda: courier_dp.start_polling(courier_bot)),
             _supervised("webapp",       lambda: uvicorn_server.serve()),
+            _supervised("reminders",    lambda: reminder_service.run_forever()),
         )
     finally:
         await asyncio.gather(

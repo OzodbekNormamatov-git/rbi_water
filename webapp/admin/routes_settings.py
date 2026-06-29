@@ -38,6 +38,17 @@ class CashbackSettingsIn(BaseModel):
     max_cashback_usage_ratio: Optional[Decimal] = Field(default=None, ge=0, le=1)
 
 
+class RemindersSettingsOut(BaseModel):
+    reminders_enabled: bool
+    reminder_lead_days: int
+
+
+class RemindersSettingsIn(BaseModel):
+    reminders_enabled: Optional[bool] = None
+    # Sikl tugashidan necha kun OLDIN (0 = aynan kuni). Faqat kunlarda.
+    reminder_lead_days: Optional[int] = Field(default=None, ge=0, le=30)
+
+
 class CashbackOverviewOut(BaseModel):
     """Cashback dasturining moliyaviy ko'rinishi."""
     config_enabled: bool
@@ -86,6 +97,37 @@ async def update_settings(
         cashback_enabled=cfg.enabled,
         cashback_percent=cfg.percent,
         max_cashback_usage_ratio=cfg.max_usage_ratio,
+    )
+
+
+@router.get("/reminders", response_model=RemindersSettingsOut)
+async def get_reminders(
+    _=Depends(admin_required),
+    settings: SettingsService = Depends(get_settings_service),
+) -> RemindersSettingsOut:
+    cfg = await settings.get_reminders_config()
+    return RemindersSettingsOut(
+        reminders_enabled=cfg.enabled, reminder_lead_days=cfg.lead_days,
+    )
+
+
+@router.patch("/reminders", response_model=RemindersSettingsOut)
+async def update_reminders(
+    payload: RemindersSettingsIn,
+    _=Depends(admin_required),
+    settings: SettingsService = Depends(get_settings_service),
+) -> RemindersSettingsOut:
+    try:
+        cfg = await settings.update_reminders(
+            enabled=payload.reminders_enabled,
+            lead_days=payload.reminder_lead_days,
+        )
+    except ValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except DomainError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return RemindersSettingsOut(
+        reminders_enabled=cfg.enabled, reminder_lead_days=cfg.lead_days,
     )
 
 

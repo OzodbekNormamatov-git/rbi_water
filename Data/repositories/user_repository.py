@@ -83,6 +83,19 @@ class UserRepository(BaseRepository[User]):
         res = await self._session.execute(stmt)
         return [(str(r.day)[:10], int(r.count or 0)) for r in res.all()]
 
+    async def list_reminder_candidates(self) -> Sequence[User]:
+        """Avto-eslatma nomzodlari: aktiv + botda faollashgan + opt-in + real ID.
+        (Ochiq buyurtma / sikl / cooldown tekshiruvi service'da Python'da.)"""
+        stmt = self._active_only(
+            select(User).where(
+                User.has_started_bot.is_(True),
+                User.reminders_enabled.is_(True),
+                User.telegram_id > 0,
+            )
+        )
+        res = await self._session.execute(stmt)
+        return res.scalars().all()
+
     async def list_all_telegram_ids(self) -> list[int]:
         """Broadcast uchun — faqat real, botda faollashgan aktiv mijozlar.
 

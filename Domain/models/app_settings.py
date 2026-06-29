@@ -14,9 +14,10 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from sqlalchemy import Boolean, Numeric
+from sqlalchemy import Boolean, Integer, Numeric
 from sqlalchemy.orm import Mapped, mapped_column
 
+from Domain.constants import DEFAULT_REMINDER_LEAD_DAYS
 from Domain.models.base import Base, TimestampMixin
 
 
@@ -40,4 +41,15 @@ class AppSettings(Base, TimestampMixin):
     # 1.00 = to'liq qoplash mumkin (mijoz balansi item summasidan katta bo'lsa).
     max_cashback_usage_ratio: Mapped[Decimal] = mapped_column(
         Numeric(5, 2), nullable=False, default=Decimal("1.00"),
+    )
+
+    # ---- Avto-eslatma config ----
+    # Butun "suv kerakmi?" eslatma dasturini yoqish/o'chirish.
+    reminders_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True,
+    )
+    # Sikl tugashidan necha kun OLDIN eslatma yuboriladi (0 = aynan tugash kuni).
+    # Admin Mini App'da KUNLARDA sozlanadi (soatlarda emas).
+    reminder_lead_days: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=DEFAULT_REMINDER_LEAD_DAYS,
     )

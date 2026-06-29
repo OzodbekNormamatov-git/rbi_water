@@ -31,6 +31,13 @@ class CashbackConfig:
     max_usage_ratio: Decimal
 
 
+@dataclass(slots=True)
+class RemindersConfig:
+    """Avto-eslatma sozlamasi (sof DTO)."""
+    enabled: bool
+    lead_days: int
+
+
 def _to_config(s: AppSettings) -> CashbackConfig:
     return CashbackConfig(
         enabled=bool(s.cashback_enabled),
@@ -39,11 +46,19 @@ def _to_config(s: AppSettings) -> CashbackConfig:
     )
 
 
+def _to_reminders(s: AppSettings) -> RemindersConfig:
+    return RemindersConfig(
+        enabled=bool(s.reminders_enabled),
+        lead_days=int(s.reminder_lead_days or 0),
+    )
+
+
 # Validatsiya chegaralari — biznes himoyasi uchun
 MIN_PERCENT = Decimal("0.00")
 MAX_PERCENT = Decimal("50.00")
 MIN_RATIO = Decimal("0.00")
 MAX_RATIO = Decimal("1.00")
+MAX_REMINDER_LEAD_DAYS = 30
 
 
 class SettingsService:
@@ -90,3 +105,37 @@ class SettingsService:
                 s.max_cashback_usage_ratio = Decimal(str(max_usage_ratio)).quantize(Decimal("0.01"))
             await uow.settings.add(s)
             return _to_config(s)
+
+    # ---------------------- Avto-eslatma ----------------------
+
+    async def get_reminders_config(self) -> RemindersConfig:
+        async with UnitOfWork(self._sf) as uow:
+            s = await uow.settings.get_or_create()
+            return _to_reminders(s)
+
+    async def update_reminders(
+        self, *, enabled: Optional[bool] = None, lead_days: Optional[int] = None,
+    ) -> RemindersConfig:
+        """Avto-eslatma sozlamasini atomik yangilaydi (PATCH semantikasi).
+        `lead_days` — sikl tugashidan necha kun oldin (0..MAX, faqat kunlarda)."""
+        if lead_days is not None:
+            try:
+                ld = int(lead_days)
+            except (TypeError, ValueError):
+                raise ValidationError(
+                    "settings_lead_days_out_of_range",
+                    context={"min": 0, "max": MAX_REMINDER_LEAD_DAYS},
+                )
+            if ld < 0 or ld > MAX_REMINDER_LEAD_DAYS:
+                raise ValidationError(
+                    "settings_lead_days_out_of_range",
+                    context={"min": 0, "max": MAX_REMINDER_LEAD_DAYS},
+                )
+        async with UnitOfWork(self._sf) as uow:
+            s = await uow.settings.get_for_update()
+            if enabled is not None:
+                s.reminders_enabled = bool(enabled)
+            if lead_days is not None:
+                s.reminder_lead_days = int(lead_days)
+            await uow.settings.add(s)
+            return _to_reminders(s)

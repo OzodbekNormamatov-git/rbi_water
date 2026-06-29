@@ -99,6 +99,32 @@ class OrderRepository(BaseRepository[Order]):
         )
         return res.scalars().all()
 
+    async def all_delivered_for_cadence(self) -> list[tuple[int, int, datetime, int]]:
+        """Barcha DELIVERED buyurtmalar: (customer_id, order_id, delivered_at,
+        bottles_issued), customer + sana bo'yicha tartiblangan. Avto-eslatma
+        kunlik job butun tarixni BITTA so'rovda oladi, keyin Python'da
+        guruhlaydi (N+1 yo'q)."""
+        stmt = self._active_only(
+            select(Order.customer_id, Order.id, Order.delivered_at, Order.bottles_issued)
+            .where(Order.status == OrderStatus.DELIVERED, Order.delivered_at.is_not(None))
+            .order_by(Order.customer_id.asc(), Order.delivered_at.asc())
+        )
+        res = await self._session.execute(stmt)
+        return [(int(c), int(oid), d, int(b or 0)) for c, oid, d, b in res.all()]
+
+    async def customers_with_open_order(self) -> set[int]:
+        """Hozir tugallanmagan buyurtmasi bor mijozlar — ularga eslatma yubormaymiz."""
+        stmt = self._active_only(
+            select(Order.customer_id).where(
+                Order.status.in_([
+                    OrderStatus.NEW, OrderStatus.ACCEPTED,
+                    OrderStatus.DELIVERING, OrderStatus.ARRIVED,
+                ])
+            ).distinct()
+        )
+        res = await self._session.execute(stmt)
+        return {int(c) for c in res.scalars().all()}
+
     # ---------------------- Admin analytics ----------------------
 
     async def count_by_status(self) -> dict[str, int]:

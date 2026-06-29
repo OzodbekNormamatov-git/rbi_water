@@ -74,6 +74,7 @@ _MESSAGES: Dict[str, Dict[str, str]] = {
         # Settings (admin)
         "settings_percent_out_of_range":  "Keshbek foizi {min}% va {max}% oralig'ida bo'lishi shart.",
         "settings_ratio_out_of_range":    "Keshbek bilan qoplash chegarasi {min} va {max} oralig'ida bo'lishi shart.",
+        "settings_lead_days_out_of_range": "Eslatma kuni {min} va {max} kun oralig'ida bo'lishi shart.",
         # Bottles
         "bottles_out_of_range":           "Idishlar soni 0..{max} oralig'ida bo'lishi shart.",
         "bottles_return_exceeds_balance": "Mijozda atigi {available} ta idish mavjud, {requested} ta qaytarib bo'lmaydi.",

@@ -51,6 +51,24 @@ MAX_BOTTLES_PER_TRANSACTION: Final[int] = 50
 # bo'lganda mijoz idish balansiga shu son × dona qo'shiladi.
 MAX_BOTTLES_PER_UNIT: Final[int] = 99
 
+# ---------------------- Avto-eslatma (predictive reorder) ----------------------
+# Mijozning iste'mol tezligiga qarab "suv kerakmi?" eslatmasi.
+# Hisoblangan sikl shu chegaralarga qisiladi (absurd qiymatlardan himoya).
+REMINDER_MIN_CYCLE_DAYS: Final[int] = 2
+REMINDER_MAX_CYCLE_DAYS: Final[int] = 60
+# Shaxsiy sikl uchun kamida shuncha DELIVERED suv-buyurtma kerak (aks holda
+# global o'rtacha tezlik ishlatiladi).
+REMINDER_MIN_ORDERS_FOR_CADENCE: Final[int] = 2
+# Bitta buyurtmadan keyin eng ko'pi shuncha eslatma — keyin to'xtaydi (churn).
+REMINDER_MAX_PER_ORDER: Final[int] = 2
+# Eslatma yuboriladigan mahalliy soat (Toshkent) — DOIM kunning birinchi yarmida
+# (kechqurun emas: kuryerlar mavjud bo'lsin). Hisob faqat KUNLARDA, soatlarda emas.
+REMINDER_SEND_HOUR_LOCAL: Final[int] = 10
+# Admin sozlamasi default: sikl tugashidan necha kun OLDIN eslatma (0 = aynan kuni).
+DEFAULT_REMINDER_LEAD_DAYS: Final[int] = 1
+# Global default per-idish-kun (1 ta ham interval bo'lmasa, eng oxirgi fallback).
+DEFAULT_PER_BOTTLE_DAYS: Final[float] = 7.0
+
 # ---------------------- Broadcast / Rassilka ----------------------
 MAX_BROADCAST_TITLE_LENGTH: Final[int] = 80
 MAX_BROADCAST_BODY_LENGTH: Final[int] = 3500

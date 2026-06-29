@@ -202,6 +202,12 @@ _MIGRATIONS: tuple[str, ...] = (
        WHERE cash_balance <> 0
          AND NOT EXISTS (SELECT 1 FROM ledger_entries le
             WHERE le.subject_type='courier' AND le.subject_id=couriers.id AND le.account='cash')""",
+
+    # ------ v16: Avto-eslatma (predictive reorder) ------
+    # Sozlama ustunlari (reminders jadvali `create_all` orqali yaratiladi).
+    "ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS reminders_enabled BOOLEAN NOT NULL DEFAULT true",
+    "ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS reminder_lead_days INTEGER NOT NULL DEFAULT 1",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS reminders_enabled BOOLEAN NOT NULL DEFAULT true",
 )
 
 

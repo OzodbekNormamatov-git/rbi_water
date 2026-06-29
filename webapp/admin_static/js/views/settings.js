@@ -49,6 +49,43 @@ export async function renderSettings(root) {
       </div>
     </div>
 
+    <div class="charts-grid" style="grid-template-columns: 1fr">
+      <div class="card">
+        <h3 class="card__title">💧 Avto-eslatma ("suv kerakmi?")</h3>
+        <p class="muted" style="font-size:12px;margin-bottom:8px">
+          Tizim har mijozning o'rtacha siklini (necha kunda suv olishini, idish soniga qarab) hisoblab boradi.
+          Sikl tugayotganda mijozga <b>ertalab</b> "suv kerakmi?" eslatmasi yuboriladi.
+        </p>
+        <form id="remForm">
+          <div class="settings-row">
+            <div class="settings-row__label">
+              <div class="settings-row__title">Avto-eslatma yoqilgan</div>
+              <div class="settings-row__hint">O'chirilsa: hech qanday eslatma yuborilmaydi.</div>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="rem-enabled" />
+              <span class="switch__slider"></span>
+            </label>
+          </div>
+
+          <div class="settings-row">
+            <div class="settings-row__label">
+              <div class="settings-row__title">Necha kun OLDIN eslatilsin</div>
+              <div class="settings-row__hint">Sikl tugashidan necha kun oldin eslatma borsin. <b>0</b> = aynan tugash kuni, <b>1</b> = 1 kun oldin. (Faqat kunlarda — eslatma doim ertalab boradi.)</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <input class="input" id="rem-lead" type="number" min="0" max="30" step="1" style="max-width:120px" />
+              <span class="muted">kun</span>
+            </div>
+          </div>
+
+          <div style="text-align:right;margin-top:12px">
+            <button class="btn" id="saveRemBtn" type="button">Saqlash</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
     <div class="charts-grid" style="grid-template-columns: 1fr 1fr">
       <div class="card">
         <h3 class="card__title">Tarixiy keshbek aylanmasi</h3>
@@ -64,9 +101,11 @@ export async function renderSettings(root) {
   await reload();
 
   async function reload() {
-    let cfg, overview;
+    let cfg, overview, rem;
     try {
-      [cfg, overview] = await Promise.all([api.settings(), api.cashbackOverview()]);
+      [cfg, overview, rem] = await Promise.all([
+        api.settings(), api.cashbackOverview(), api.reminders(),
+      ]);
     } catch (e) {
       toast(e.message || "Yuklab bo'lmadi", { error: true });
       return;
@@ -76,6 +115,10 @@ export async function renderSettings(root) {
     root.querySelector("#cb-enabled").checked = !!cfg.cashback_enabled;
     root.querySelector("#cb-percent").value = Number(cfg.cashback_percent);
     root.querySelector("#cb-ratio").value = Math.round(Number(cfg.max_cashback_usage_ratio) * 100);
+
+    // Avto-eslatma form
+    root.querySelector("#rem-enabled").checked = !!rem.reminders_enabled;
+    root.querySelector("#rem-lead").value = Number(rem.reminder_lead_days);
 
     // KPIs — moliyaviy ko'rinish
     root.querySelector("#cashbackKpis").innerHTML = `
@@ -161,6 +204,23 @@ export async function renderSettings(root) {
         max_cashback_usage_ratio: ratio,
       });
       toast("Sozlamalar saqlandi");
+      await reload();
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : "Xatolik";
+      toast(msg, { error: true });
+    }
+  });
+
+  root.querySelector("#saveRemBtn").addEventListener("click", async (e) => {
+    e.preventDefault();
+    const enabled = root.querySelector("#rem-enabled").checked;
+    const lead = Math.floor(Number(root.querySelector("#rem-lead").value));
+    if (!Number.isFinite(lead) || lead < 0 || lead > 30) {
+      return toast("Eslatma kuni 0..30 oralig'ida bo'lishi shart", { error: true });
+    }
+    try {
+      await api.updateReminders({ reminders_enabled: enabled, reminder_lead_days: lead });
+      toast("Avto-eslatma sozlamasi saqlandi");
       await reload();
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : "Xatolik";

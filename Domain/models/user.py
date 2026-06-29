@@ -48,6 +48,12 @@ class User(Base, TimestampMixin, SoftDeleteMixin):
         Boolean, nullable=False, default=False,
     )
 
+    # Avto-eslatma ("suv kerakmi?") — mijoz xohlamasa o'chirib qo'yiladi (opt-out).
+    # Default True; kelajakda profil sahifasida toggle qilinishi mumkin.
+    reminders_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True,
+    )
+
     orders: Mapped[List["Order"]] = relationship(back_populates="customer", lazy="selectin")
     addresses: Mapped[List["CustomerAddress"]] = relationship(
         back_populates="customer",

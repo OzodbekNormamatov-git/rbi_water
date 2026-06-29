@@ -12,6 +12,7 @@ from Data.repositories.courier_repository import CourierRepository
 from Data.repositories.food_repository import FoodRepository
 from Data.repositories.ledger_repository import LedgerRepository
 from Data.repositories.order_repository import OrderRepository
+from Data.repositories.reminder_repository import ReminderRepository
 from Data.repositories.settings_repository import SettingsRepository
 from Data.repositories.user_repository import UserRepository
 
@@ -31,6 +32,7 @@ class UnitOfWork:
     broadcasts: BroadcastRepository
     settings: SettingsRepository
     ledger: LedgerRepository
+    reminders: ReminderRepository
 
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory
@@ -47,6 +49,7 @@ class UnitOfWork:
         self.broadcasts = BroadcastRepository(self._session)
         self.settings = SettingsRepository(self._session)
         self.ledger = LedgerRepository(self._session)
+        self.reminders = ReminderRepository(self._session)
         return self
 
     async def __aexit__(

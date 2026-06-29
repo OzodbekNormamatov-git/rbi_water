@@ -68,6 +68,9 @@ export const api = {
   settings:          () => request("/api/admin/settings"),
   updateSettings:    (body) => request("/api/admin/settings", { method: "PATCH", body }),
   cashbackOverview:  () => request("/api/admin/settings/cashback"),
+  // Avto-eslatma sozlamasi
+  reminders:         () => request("/api/admin/settings/reminders"),
+  updateReminders:   (body) => request("/api/admin/settings/reminders", { method: "PATCH", body }),
 
   // Broadcasts
   broadcasts:       ({ limit, offset } = {}) => {
