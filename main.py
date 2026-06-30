@@ -30,6 +30,7 @@ from Service.analytics_service import AnalyticsService
 from Service.broadcast_service import BroadcastService
 from Service.cart_service import CartService
 from Service.courier_service import CourierService
+from Service.courier_flow_service import CourierFlowService
 from Service.food_service import FoodService
 from Service.geocode_service import GeocodeService
 from Service.ledger_service import LedgerService
@@ -102,6 +103,9 @@ async def _run() -> None:
         webapp_url=settings.webapp_public_url or None,
     )
 
+    # Kuryer oqimi orkestratori — web route'lar yupqa qoladi (best practice).
+    courier_flow_service = CourierFlowService(order_service, notifier)
+
     customer_dp = build_customer_dispatcher(
         user_service=user_service,
         food_service=food_service,
@@ -123,7 +127,6 @@ async def _run() -> None:
     courier_dp = build_courier_dispatcher(
         courier_service=courier_service,
         order_service=order_service,
-        notification_service=notifier,
         courier_group_chat_id=settings.courier_group_chat_id,
     )
 
@@ -173,6 +176,7 @@ async def _run() -> None:
         broadcast_service=broadcast_service,
         settings_service=settings_service,
         geocode_service=geocode_service,
+        courier_flow_service=courier_flow_service,
         customer_bot_token=settings.customer_bot_token,
         admin_bot_token=settings.admin_bot_token,
         courier_bot_token=settings.courier_bot_token,

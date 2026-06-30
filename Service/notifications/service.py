@@ -18,11 +18,7 @@ from Service.order_display import order_display_number
 from Service.notifications.formatters import (
     format_customer_arrived,
     format_customer_timeline,
-    format_dm_for_courier,
-    format_group_claimed,
-    format_group_new,
-    make_courier_dm_kb,
-    make_group_new_kb,
+    format_group_log,
 )
 
 log = logging.getLogger(__name__)
@@ -59,11 +55,15 @@ class NotificationService:
     # ---------------------- Couriers group ----------------------
 
     async def dispatch_to_couriers_group(self, order: Order) -> Optional[int]:
+        """Kuryerlar guruhiga buyurtmani yozadi — endi faqat ADMIN LOG (tugmasiz).
+
+        Kuryerlar claim qilmaydi (claim web ilovada). Bu xabar buyurtma holati
+        o'zgargan sari `update_group_log` orqali tahrirlanib boradi."""
         try:
             msg = await self._courier_bot.send_message(
                 chat_id=self._courier_group_chat_id,
-                text=format_group_new(order),
-                reply_markup=make_group_new_kb(order.id),
+                text=format_group_log(order),
+                reply_markup=None,
                 disable_web_page_preview=True,
             )
         except TelegramAPIError as e:
@@ -130,81 +130,23 @@ class NotificationService:
                 log.debug("Kuryerga DM yuborilmadi tg=%s: %s", tg, e)
             await asyncio.sleep(0.05)  # Telegram rate-limit
 
-    async def reopen_group_message(self, order: Order) -> None:
-        if not order.group_message_id:
-            return
-        try:
-            await self._courier_bot.edit_message_text(
-                chat_id=self._courier_group_chat_id,
-                message_id=order.group_message_id,
-                text=format_group_new(order),
-                reply_markup=make_group_new_kb(order.id),
-                disable_web_page_preview=True,
-            )
-        except TelegramAPIError as e:
-            log.warning("Guruh xabarini qayta ochib bo'lmadi #%s: %s", order.id, e)
+    async def update_group_log(self, order: Order) -> None:
+        """Guruhdagi (admin LOG) xabarni buyurtma joriy holatiga moslab tahrirlaydi.
 
-    async def mark_group_message_claimed(self, order: Order) -> None:
+        Yangi → olindi (kim) → yo'lda → yetib bordi → yetkazildi. Tugma yo'q —
+        kuryerlar ishni web ilovada qiladi; guruh faqat admin kuzatuvi uchun."""
         if not order.group_message_id:
             return
         try:
             await self._courier_bot.edit_message_text(
                 chat_id=self._courier_group_chat_id,
                 message_id=order.group_message_id,
-                text=format_group_claimed(order),
+                text=format_group_log(order),
                 reply_markup=None,
                 disable_web_page_preview=True,
             )
         except TelegramAPIError as e:
-            log.warning("Guruh xabarini tahrirlab bo'lmadi #%s: %s", order.id, e)
-
-    # ---------------------- Courier DM ----------------------
-
-    async def send_order_to_courier_dm(self, order: Order) -> Optional[int]:
-        if not order.courier:
-            log.error("DM uchun order.courier yo'q — order=%s", order.id)
-            return None
-        chat_id = order.courier.telegram_id
-        try:
-            text_msg = await self._courier_bot.send_message(
-                chat_id=chat_id,
-                text=format_dm_for_courier(order),
-                reply_markup=make_courier_dm_kb(order),
-                disable_web_page_preview=True,
-            )
-        except TelegramForbiddenError:
-            raise
-        except TelegramAPIError:
-            log.exception(
-                "Kuryerga DM yuborib bo'lmadi (text) order=%s tg=%s", order.id, chat_id
-            )
-            return None
-        try:
-            await self._courier_bot.send_location(
-                chat_id=chat_id,
-                latitude=float(order.delivery_latitude),
-                longitude=float(order.delivery_longitude),
-                reply_to_message_id=text_msg.message_id,
-            )
-        except TelegramAPIError:
-            log.warning(
-                "Kuryerga DM lokatsiya yuborilmadi order=%s tg=%s", order.id, chat_id
-            )
-        return text_msg.message_id
-
-    async def update_courier_dm_message(self, order: Order) -> None:
-        if not order.courier or not order.courier_dm_message_id:
-            return
-        try:
-            await self._courier_bot.edit_message_text(
-                chat_id=order.courier.telegram_id,
-                message_id=order.courier_dm_message_id,
-                text=format_dm_for_courier(order),
-                reply_markup=make_courier_dm_kb(order),
-                disable_web_page_preview=True,
-            )
-        except TelegramAPIError as e:
-            log.warning("Kuryer DM xabarini tahrirlab bo'lmadi #%s: %s", order.id, e)
+            log.warning("Guruh log xabarini tahrirlab bo'lmadi #%s: %s", order.id, e)
 
     # ---------------------- Customer DM (timeline) ----------------------
 

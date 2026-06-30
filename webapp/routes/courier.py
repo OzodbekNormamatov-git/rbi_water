@@ -17,13 +17,13 @@ from pydantic import BaseModel, Field
 from Data.unit_of_work import UnitOfWork
 from Domain.constants import MAX_BOTTLES_PER_TRANSACTION
 from Domain.enums import OrderStatus
+from Service.courier_flow_service import CourierFlowService
 from Service.exceptions import DomainError, EntityNotFoundError, InvalidOperationError
-from Service.notification_service import NotificationService
 from Service.order_display import order_display_number
 from Service.order_service import OrderService
 from webapp.deps import (
     current_courier,
-    get_notification_service,
+    get_courier_flow_service,
     get_order_service,
 )
 
@@ -164,77 +164,41 @@ async def active_orders(
     return [_to_courier_order(o, include_phone=True) for o in rows]
 
 
-# ---------------------- Claim + transitions ----------------------
+# ---------------------- Claim + transitions (CourierFlowService orqali) ----------------------
+# Route'lar yupqa: biznes oqim (holat + bildirishnomalar) CourierFlowService'da.
 
-async def _sync_after_claim(order, orders: OrderService, notifier: NotificationService) -> None:
-    """Claim'dan keyin: guruh xabarini yopish + mijoz timeline (best-effort)."""
-    try:
-        await notifier.mark_group_message_claimed(order)
-    except Exception as e:
-        log.warning("Guruh xabarini yopib bo'lmadi #%s: %s", order.id, e)
-    # Kuryerga DM — web claim'da ixtiyoriy (kuryer ilovada). Best-effort, unclaim YO'Q.
-    try:
-        dm_id = await notifier.send_order_to_courier_dm(order)
-        if dm_id is not None:
-            await orders.attach_courier_dm_message(order.id, dm_id)
-    except Exception as e:
-        log.info("Kuryer DM yuborilmadi (web claim) #%s: %s", order.id, e)
-    await _sync_customer_timeline(order, orders, notifier)
-
-
-async def _sync_customer_timeline(order, orders: OrderService, notifier: NotificationService) -> None:
-    try:
-        msg_id = await notifier.upsert_customer_status_message(order)
-        if msg_id is not None:
-            await orders.attach_customer_dm_message(order.id, msg_id)
-    except Exception as e:
-        log.warning("Mijoz timeline yangilanmadi #%s: %s", order.id, e)
+def _http_for(exc: DomainError) -> HTTPException:
+    if isinstance(exc, EntityNotFoundError):
+        return HTTPException(status_code=404, detail="Buyurtma topilmadi")
+    if isinstance(exc, InvalidOperationError):
+        return HTTPException(status_code=409, detail=str(exc))
+    return HTTPException(status_code=400, detail=str(exc))
 
 
 @router.post("/orders/{order_id}/claim", response_model=CourierOrderOut)
 async def claim_order(
     order_id: int,
     courier=Depends(current_courier),
-    orders: OrderService = Depends(get_order_service),
-    notifier: NotificationService = Depends(get_notification_service),
+    flow: CourierFlowService = Depends(get_courier_flow_service),
 ) -> CourierOrderOut:
-    """Buyurtmani olish — race-safe. Boshqa kuryer ulgursa 409."""
+    """Buyurtmani olish — race-safe (SELECT FOR UPDATE). Boshqa kuryer ulgursa 409."""
     try:
-        order = await orders.claim_by_courier(order_id, courier.telegram_id)
-    except EntityNotFoundError:
-        raise HTTPException(status_code=404, detail="Buyurtma topilmadi")
-    except InvalidOperationError as e:
-        raise HTTPException(status_code=409, detail=str(e))
+        order = await flow.claim(courier, order_id)
     except DomainError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    await _sync_after_claim(order, orders, notifier)
+        raise _http_for(e)
     return _to_courier_order(order, include_phone=True)
-
-
-async def _transition(method, order_id, courier_telegram_id):
-    try:
-        return await method(order_id, courier_telegram_id)
-    except EntityNotFoundError:
-        raise HTTPException(status_code=404, detail="Buyurtma topilmadi")
-    except InvalidOperationError as e:
-        raise HTTPException(status_code=409, detail=str(e))
-    except DomainError as e:
-        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.post("/orders/{order_id}/delivering", response_model=CourierOrderOut)
 async def mark_delivering(
     order_id: int,
     courier=Depends(current_courier),
-    orders: OrderService = Depends(get_order_service),
-    notifier: NotificationService = Depends(get_notification_service),
+    flow: CourierFlowService = Depends(get_courier_flow_service),
 ) -> CourierOrderOut:
-    order = await _transition(orders.mark_delivering, order_id, courier.telegram_id)
     try:
-        await notifier.update_courier_dm_message(order)
-    except Exception:
-        pass
-    await _sync_customer_timeline(order, orders, notifier)
+        order = await flow.mark_delivering(courier, order_id)
+    except DomainError as e:
+        raise _http_for(e)
     return _to_courier_order(order, include_phone=True)
 
 
@@ -242,21 +206,12 @@ async def mark_delivering(
 async def mark_arrived(
     order_id: int,
     courier=Depends(current_courier),
-    orders: OrderService = Depends(get_order_service),
-    notifier: NotificationService = Depends(get_notification_service),
+    flow: CourierFlowService = Depends(get_courier_flow_service),
 ) -> CourierOrderOut:
-    order = await _transition(orders.mark_arrived, order_id, courier.telegram_id)
     try:
-        await notifier.update_courier_dm_message(order)
-    except Exception:
-        pass
-    await _sync_customer_timeline(order, orders, notifier)
-    try:
-        arrived_id = await notifier.send_customer_arrived_alert(order)
-        if arrived_id is not None:
-            await orders.attach_customer_arrived_message(order.id, arrived_id)
-    except Exception as e:
-        log.info("ARRIVED alert yuborilmadi #%s: %s", order.id, e)
+        order = await flow.mark_arrived(courier, order_id)
+    except DomainError as e:
+        raise _http_for(e)
     return _to_courier_order(order, include_phone=True)
 
 
@@ -265,13 +220,13 @@ async def set_bottles(
     order_id: int,
     payload: BottlesIn,
     courier=Depends(current_courier),
-    orders: OrderService = Depends(get_order_service),
+    flow: CourierFlowService = Depends(get_courier_flow_service),
 ) -> CourierOrderOut:
     """Yetkazishdan oldin mijozdan olingan bo'sh idishlar sonini kiritish."""
-    order = await _transition(
-        lambda oid, tg: orders.set_bottles_returned(oid, tg, payload.value),
-        order_id, courier.telegram_id,
-    )
+    try:
+        order = await flow.set_bottles(courier, order_id, payload.value)
+    except DomainError as e:
+        raise _http_for(e)
     return _to_courier_order(order, include_phone=True)
 
 
@@ -279,21 +234,11 @@ async def set_bottles(
 async def mark_delivered(
     order_id: int,
     courier=Depends(current_courier),
-    orders: OrderService = Depends(get_order_service),
-    notifier: NotificationService = Depends(get_notification_service),
+    flow: CourierFlowService = Depends(get_courier_flow_service),
 ) -> CourierOrderOut:
     """Yetkazib berildi — balans/jurnal yangilanadi (race-safe, order LOCK)."""
-    order = await _transition(orders.mark_delivered, order_id, courier.telegram_id)
-    # Mijoz ARRIVED alohida xabarini o'chirish (bo'lsa)
-    if order.customer_arrived_message_id:
-        try:
-            await notifier.delete_customer_arrived_alert(order)
-        except Exception:
-            pass
-        await orders.clear_customer_arrived_message(order.id)
-    await _sync_customer_timeline(order, orders, notifier)
     try:
-        await notifier.update_courier_dm_message(order)
-    except Exception:
-        pass
+        order = await flow.mark_delivered(courier, order_id)
+    except DomainError as e:
+        raise _http_for(e)
     return _to_courier_order(order, include_phone=True)

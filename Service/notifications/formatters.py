@@ -55,62 +55,38 @@ def _items_short(order: Order) -> str:
     return "\n".join(lines)
 
 
-def _items_with_total(order: Order) -> str:
-    return "\n".join(
-        f"• {it.food_name} × {it.quantity} = {it.line_total} so'm"
-        for it in (order.items or [])
-    )
-
-
 # ---------------------- Couriers group ----------------------
 
-def format_group_new(order: Order) -> str:
-    """Kuryerlar guruhi: yangi (NEW) buyurtma. Operator yaratgan bo'lsa belgilanadi."""
-    operator_badge = ""
-    if getattr(order, "created_by_operator_id", None):
-        operator_badge = f"  <i>(📞 operator orqali)</i>"
-    return (
-        f"{_courier_head(order)}"
-        f"<b>🆕 Yangi buyurtma {order_display_number(order)}</b>{operator_badge}\n"
-        f"Mijoz: {order.customer.full_name}\n"
-        f"📍 Manzil: <a href='{maps_link(order.delivery_latitude, order.delivery_longitude)}'>"
-        f"xaritada ko'rish</a> (lokatsiya pastda)\n"
-        f"\n<b>Tarkibi:</b>\n{_items_with_total(order)}\n"
-        f"\n<b>Jami:</b> {order.total_amount} so'm (naqd)\n"
-        f"{('📝 ' + order.note) if order.note else ''}"
-    ).rstrip()
+def format_group_log(order: Order) -> str:
+    """Admin LOG — kuryerlar guruhi endi faqat kuzatish uchun (tugmasiz).
 
-
-def format_group_claimed(order: Order) -> str:
-    """Kuryerlar guruhi: claim'dan keyin — faqat status."""
-    courier = order.courier.full_name if order.courier else "Kuryer"
-    return (
-        f"{_courier_head(order)}"
-        f"<b>✅ Buyurtma {order_display_number(order)}</b>\n"
-        f"<b>{courier}</b> tomonidan olindi.\n"
-        f"Davomi shaxsiy chatda."
-    )
-
-
-# ---------------------- Courier DM ----------------------
-
-def format_dm_for_courier(order: Order) -> str:
-    """Kuryerga DM da yuboriladigan to'liq ma'lumot — har transitsiyada qayta tahrirlanadi."""
+    Bitta xabar buyurtma hayot tsikli davomida tahrirlanib boradi: yangi →
+    olindi (kim) → yo'lda → yetib bordi → yetkazildi. Admin nima bo'layotganini
+    real vaqt rejimida ko'rib turadi. Claim/ish kuryerning web ilovasida."""
+    operator_badge = "  <i>(📞 operator)</i>" if getattr(order, "created_by_operator_id", None) else ""
+    lines: list[str] = []
     head = _courier_head(order).rstrip("\n")
-    lines = ([head] if head else []) + [
-        f"<b>Buyurtma {order_display_number(order)}</b>",
-        f"Holati: <b>{order.status.label_uz}</b>",
-        "",
-        f"👤 Mijoz: {order.customer.full_name}",
-        f"📞 Tel: <code>{order.contact_phone}</code>",
-        f"📍 Manzil: <a href='{maps_link(order.delivery_latitude, order.delivery_longitude)}'>"
-        f"xaritada ko'rish</a>",
-        "",
-        "<b>Tarkibi:</b>",
-        _items_with_total(order),
-        "",
-        f"<b>Jami:</b> {order.total_amount} so'm (naqd kutiladi)",
-    ]
+    if head:
+        lines.append(head)
+    lines.append(
+        f"<b>{order.status.emoji} {order_display_number(order)} — {order.status.label_uz}</b>{operator_badge}"
+    )
+    lines.append(f"👤 {order.customer.full_name} · 📞 <code>{order.contact_phone}</code>")
+    addr = (order.address_details or "").strip()
+    lines.append(
+        f"📍 <a href='{maps_link(order.delivery_latitude, order.delivery_longitude)}'>xarita</a>"
+        + (f" · {addr}" if addr else "")
+    )
+    lines.append(f"🧺 {_items_short(order)}")
+    lines.append(f"💰 <b>{order.total_amount} so'm</b> (naqd)")
+    if order.courier is not None:
+        ph = f" · 📞 {order.courier.phone_number}" if order.courier.phone_number else ""
+        lines.append(f"🚚 Kuryer: <b>{order.courier.full_name}</b>{ph}")
+    if order.delivered_at and (int(order.bottles_issued or 0) or int(order.bottles_returned or 0)):
+        lines.append(
+            f"♻️ Idish: berildi {int(order.bottles_issued or 0)}, "
+            f"qaytdi {int(order.bottles_returned or 0)}"
+        )
     if order.note:
         lines.append(f"📝 {order.note}")
     return "\n".join(lines)
@@ -193,48 +169,6 @@ def format_customer_timeline(order: Order, brand_name: str) -> str:
     return "\n".join(parts)
 
 
-# ---------------------- Inline keyboards (composition root uchun) ----------------------
-
-def make_group_new_kb(order_id: int):
-    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-    return InlineKeyboardMarkup(
-        inline_keyboard=[[
-            InlineKeyboardButton(text="✅ Men olaman", callback_data=f"order:claim:{order_id}")
-        ]]
-    )
-
-
-def make_courier_dm_kb(order: Order):
-    """Kuryer DM tugmalari — har bir holatga mos keladigan bitta tugma.
-
-    Oqim: ACCEPTED → DELIVERING → ARRIVED → tasdiqlash sahifasi → DELIVERED
-    """
-    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-    if order.status == OrderStatus.ACCEPTED:
-        return InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(
-                text="🚗 Yo'lga chiqdim",
-                callback_data=f"order:delivering:{order.id}",
-            )
-        ]])
-    if order.status == OrderStatus.DELIVERING:
-        return InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(
-                text="📍 Yetib keldim",
-                callback_data=f"order:arrived:{order.id}",
-            )
-        ]])
-    if order.status == OrderStatus.ARRIVED:
-        # Tasdiqlash sahifasini ko'rsatish tugmasi (DELIVERED ga emas, summa ko'rinishiga)
-        return InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(
-                text="📋 Buyurtmani yopish",
-                callback_data=f"order:confirm:{order.id}",
-            )
-        ]])
-    return None
-
-
 # ---------------------- Customer ARRIVED notification ----------------------
 
 def format_customer_arrived(order: Order) -> str:
@@ -260,79 +194,3 @@ def format_customer_arrived(order: Order) -> str:
     )
 
 
-# ---------------------- Courier confirmation page (ARRIVED → DELIVERED) ----------------------
-
-def format_courier_confirmation(order: Order, currency: str = "so'm") -> str:
-    """Kuryer "Qabul qildim" oldidan ko'radigan sahifa.
-
-    Kuryer bu yerda mijozdan olingan bo'sh idishlar sonini +/− tugmalari
-    bilan kiritadi (mijoz checkout'da emas, bu yerda kiritiladi). So'ngra
-    "Yetkazib berildi" bossa — buyurtma yopiladi va balans yangilanadi.
-    """
-    items_lines = "\n".join(
-        f"  • {it.food_name} × {it.quantity}"
-        for it in (order.items or [])
-    ) or "  —"
-    cash_amount = order.total_amount
-    bottles_returned = int(order.bottles_returned or 0)
-
-    cash_block = f"💵 <b>Naqd qabul qilaman:</b> {cash_amount} {currency}"
-    if order.cashback_used and order.cashback_used > 0:
-        # Mijoz keshbek bilan qoplagan qism — kuryer naqdda OLMAYDI
-        cash_block += (
-            f"\n   <i>(keshbek bilan {order.cashback_used} {currency} qoplangan, naqd kerak emas)</i>"
-        )
-
-    bottles_block = (
-        f"♻️ <b>Mijozdan olingan bo'sh idishlar:</b> <b>{bottles_returned}</b> ta\n"
-        f"   <i>Quyidagi +/− tugmalari bilan aniq sonni kiriting.</i>"
-    )
-
-    return (
-        f"{_courier_head(order)}"
-        f"<b>📋 Buyurtma {order_display_number(order)} — yakuniy tasdiq</b>\n\n"
-        f"📦 <b>Mahsulotni topshiraman:</b>\n{items_lines}\n\n"
-        f"{cash_block}\n\n"
-        f"{bottles_block}\n\n"
-        f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"⚠️ <b>Diqqat:</b> tasdiqlashdan oldin yuqoridagi ma'lumotlarni tekshiring.\n"
-        f"Bo'sh idishlar sonini to'g'ri kiritganingizga ishonch hosil qiling.\n\n"
-        f"✅ <b>Yetkazib berildi</b> tugmasini bossangiz — pul, idishlar va mahsulotlar "
-        f"uchun javobgarlikni o'z bo'yningizga olasiz va buyurtma yopiladi."
-    )
-
-
-def make_courier_confirmation_kb(order_id: int, bottles_returned: int = 0):
-    """Tasdiqlash sahifasi tugmalari — bo'sh idishlar stepper + Yetkazib berildi / Orqaga.
-
-    Layout:
-        [➖ idish]   [N ta]   [➕ idish]
-        [✅ Yetkazib berildi — buyurtmani yopish]
-        [⬅️ Orqaga]
-    """
-    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-    bottles_returned = max(0, int(bottles_returned or 0))
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(
-                text="➖",
-                callback_data=f"order:btl:dec:{order_id}",
-            ),
-            InlineKeyboardButton(
-                text=f"♻️ {bottles_returned} ta",
-                callback_data="noop",  # markaziy ko'rsatkich — bosish ishlamaydi
-            ),
-            InlineKeyboardButton(
-                text="➕",
-                callback_data=f"order:btl:inc:{order_id}",
-            ),
-        ],
-        [InlineKeyboardButton(
-            text="✅ Yetkazib berildi — buyurtmani yopish",
-            callback_data=f"order:delivered:{order_id}",
-        )],
-        [InlineKeyboardButton(
-            text="⬅️ Orqaga",
-            callback_data=f"order:back_to_dm:{order_id}",
-        )],
-    ])

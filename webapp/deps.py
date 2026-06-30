@@ -15,6 +15,7 @@ from Service.address_service import AddressService
 from Service.analytics_service import AnalyticsService
 from Service.broadcast_service import BroadcastService
 from Service.cart_service import CartService
+from Service.courier_flow_service import CourierFlowService
 from Service.courier_service import CourierService
 from Service.food_service import FoodService
 from Service.geocode_service import GeocodeService
@@ -44,6 +45,7 @@ class AppContainer:
     broadcast_service: BroadcastService
     settings_service: SettingsService
     geocode_service: GeocodeService
+    courier_flow_service: CourierFlowService
     customer_bot_token: str
     admin_bot_token: str           # Admin Mini App initData verification uchun
     courier_bot_token: str         # Kuryer Mini App initData verification uchun
@@ -113,6 +115,10 @@ def get_brand_name(c: AppContainer = Depends(_container)) -> str:
 
 def get_geocode_service(c: AppContainer = Depends(_container)) -> GeocodeService:
     return c.geocode_service
+
+
+def get_courier_flow_service(c: AppContainer = Depends(_container)) -> CourierFlowService:
+    return c.courier_flow_service
 
 
 # ---------------------- Telegram Mini App auth ----------------------
