@@ -634,6 +634,10 @@ def build_admin_dispatcher(
                 await order_service.attach_group_message(order.id, msg_id)
         except (TelegramAPIError, OSError) as e:
             log.warning("Operator buyurtmasi (#%s) guruhiga yuborilmadi: %s", order.id, e)
+        try:
+            await notification_service.notify_couriers_new_order(order)
+        except Exception as e:
+            log.warning("Kuryerlarga DM bildirishnoma yuborilmadi #%s: %s", order.id, e)
 
         # 4) Mijozga DM (faqat has_started_bot=True bo'lsa — service ichida tekshiruv)
         try:

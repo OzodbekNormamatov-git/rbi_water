@@ -98,6 +98,8 @@ async def _run() -> None:
         courier_group_chat_id=settings.courier_group_chat_id,
         admin_telegram_ids=settings.admin_ids,
         brand_name=settings.brand_name,
+        session_factory=db.session_factory,
+        webapp_url=settings.webapp_public_url or None,
     )
 
     customer_dp = build_customer_dispatcher(
@@ -148,6 +150,14 @@ async def _run() -> None:
             log.info("Customer bot menu button -> %s/", public_url)
         except Exception as e:
             log.warning("Customer bot menu button setup failed: %s", e)
+        try:
+            await courier_bot.set_chat_menu_button(menu_button=MenuButtonWebApp(
+                text="Buyurtmalar",
+                web_app=_WebAppInfo(url=f"{public_url}/courier/"),
+            ))
+            log.info("Courier bot menu button -> %s/courier/", public_url)
+        except Exception as e:
+            log.warning("Courier bot menu button setup failed: %s", e)
 
     # FastAPI Mini App
     container = AppContainer(
@@ -165,6 +175,7 @@ async def _run() -> None:
         geocode_service=geocode_service,
         customer_bot_token=settings.customer_bot_token,
         admin_bot_token=settings.admin_bot_token,
+        courier_bot_token=settings.courier_bot_token,
         admin_telegram_ids=tuple(settings.admin_ids),
         operator_telegram_ids=tuple(settings.operator_ids),
         brand_name=settings.brand_name,

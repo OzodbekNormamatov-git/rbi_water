@@ -46,6 +46,7 @@ class AppContainer:
     geocode_service: GeocodeService
     customer_bot_token: str
     admin_bot_token: str           # Admin Mini App initData verification uchun
+    courier_bot_token: str         # Kuryer Mini App initData verification uchun
     brand_name: str
     admin_telegram_ids: tuple[int, ...] = ()
     operator_telegram_ids: tuple[int, ...] = ()
@@ -147,6 +148,48 @@ def telegram_user(
             detail="Avtorizatsiya muvaffaqiyatsiz. Mini App'ni qaytadan oching.",
             headers={"WWW-Authenticate": 'tma realm="webapp"'},
         )
+
+
+def courier_user(
+    request: Request,
+    authorization: Optional[str] = Header(default=None),
+    c: AppContainer = Depends(_container),
+) -> TelegramUser:
+    """Kuryer Mini App initData (courier_bot tokeni bilan imzolangan)."""
+    if not authorization or not authorization.lower().startswith(_AUTH_PREFIX):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authorization header yo'q (kutilgan: 'tma <initData>').",
+            headers={"WWW-Authenticate": 'tma realm="courier"'},
+        )
+    init_data = authorization[len(_AUTH_PREFIX):].strip()
+    try:
+        return verify_init_data(init_data, bot_token=c.courier_bot_token)
+    except InitDataError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Avtorizatsiya muvaffaqiyatsiz. Ilovani qaytadan oching.",
+            headers={"WWW-Authenticate": 'tma realm="courier"'},
+        )
+
+
+async def current_courier(
+    user: TelegramUser = Depends(courier_user),
+    couriers=Depends(get_courier_service),
+):
+    """Joriy kuryerni qaytaradi — ro'yxatda + arxivlanmagan + AKTIV bo'lishi shart."""
+    courier = await couriers.get_by_telegram_id(user.id)
+    if courier is None or getattr(courier, "is_deleted", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Siz kuryer sifatida ro'yxatda yo'qsiz. Avval kuryer botiga /start yuboring.",
+        )
+    if not courier.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Hisobingiz hali aktivlashtirilmagan. Admin bilan bog'laning.",
+        )
+    return courier
 
 
 def any_telegram_user(

@@ -194,6 +194,10 @@ async def create_order(
             await orders.attach_group_message(order.id, msg_id)
     except (TelegramAPIError, OSError) as e:
         log.warning("Buyurtmani kuryerlar guruhiga yuborib bo'lmadi #%s: %s", order.id, e)
+    try:
+        await notifier.notify_couriers_new_order(order)
+    except Exception as e:
+        log.warning("Kuryerlarga DM bildirishnoma yuborilmadi #%s: %s", order.id, e)
     # Mijoz DM da bitta "holat lentasi" xabari — keyingi statuslar shu xabarni edit qiladi.
     try:
         customer_msg_id = await notifier.upsert_customer_status_message(order)

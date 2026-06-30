@@ -37,6 +37,18 @@ class CourierRepository(BaseRepository[Courier]):
         row = res.first()
         return float(row[0] or 0), int(row[1] or 0)
 
+    async def list_active_started_telegram_ids(self) -> list[int]:
+        """Aktiv + botda /start qilgan kuryerlarning telegram_id'lari — yangi
+        buyurtma DM bildirishnomasi uchun (web app'ni ochuvchi tugma bilan)."""
+        stmt = self._active_only(
+            select(Courier.telegram_id).where(
+                Courier.is_active.is_(True),
+                Courier.has_started_bot.is_(True),
+            )
+        )
+        res = await self._session.execute(stmt)
+        return [int(t) for t in res.scalars().all()]
+
     async def list_all_ordered(self) -> Sequence[Courier]:
         """Admin uchun: avval aktivlar, keyin ism bo'yicha. Faqat soft-active."""
         stmt = self._active_only(

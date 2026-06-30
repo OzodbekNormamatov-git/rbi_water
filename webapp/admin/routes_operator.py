@@ -284,6 +284,10 @@ async def create_operator_order(
             await orders.attach_group_message(order.id, msg_id)
     except (TelegramAPIError, OSError) as e:
         log.warning("Operator buyurtmasi guruhiga yuborilmadi #%s: %s", order.id, e)
+    try:
+        await notifier.notify_couriers_new_order(order)
+    except Exception as e:
+        log.warning("Kuryerlarga DM bildirishnoma yuborilmadi #%s: %s", order.id, e)
 
     # 4) Mijozga DM (faqat has_started_bot=True bo'lsa — NotificationService o'zi tekshiradi)
     try:

@@ -97,6 +97,7 @@ python main.py
 Manzillar:
 - `http://localhost:8080/` — foydalanuvchi Mini App (Telegram'dan ochish kerak)
 - `http://localhost:8080/admin/` — admin paneli (Telegram'dan ochish kerak)
+- `http://localhost:8080/courier/` — kuryer ilovasi (kuryer botidan ochiladi)
 - `http://localhost:8080/docs` — FastAPI Swagger (auth talab qilmaydi; production'da yopib qo'yish mumkin)
 - `http://localhost:8080/healthz` — health check
 
@@ -132,7 +133,7 @@ Har bir transitsiyada:
 - [ ] Log fayl rotatsiyasi (logrotate yoki `RotatingFileHandler`)
 - [ ] Database backuplari (cron + `pg_dump`)
 - [ ] Bo't guruhga **admin** sifatida qo'shilgan (kuryer guruhga xabar yuborish uchun)
-- [ ] Customer botning Menu Button (`/`) va Admin botning Menu Button (`/admin/`) `WEBAPP_PUBLIC_URL` bilan o'rnatilgan (jarayon ishga tushganda avtomatik bo'ladi)
+- [ ] Customer (`/`), Admin (`/admin/`) va **Kuryer** (`/courier/`) botlarining Menu Button'lari `WEBAPP_PUBLIC_URL` bilan o'rnatilgan (jarayon ishga tushganda avtomatik). **Uchala bot** uchun ham @BotFather'da `/setdomain` host bilan moslangan bo'lishi shart (web_app tugmalari shu host'dan ochiladi)
 - [ ] **Health-check** monitoringi (`GET /healthz`) — masalan, UptimeRobot
 
 ### Nginx misol

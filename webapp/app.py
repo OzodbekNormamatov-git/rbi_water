@@ -39,6 +39,7 @@ from webapp.deps import AppContainer
 from webapp.routes import addresses as address_routes
 from webapp.routes import cart as cart_routes
 from webapp.routes import config as config_routes
+from webapp.routes import courier as courier_routes
 from webapp.routes import debug_log as debug_log_routes
 from webapp.routes import geocode as geocode_routes
 from webapp.routes import me as me_routes
@@ -52,6 +53,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 MEDIA_DIR = PROJECT_ROOT / "media"
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 ADMIN_STATIC_DIR = Path(__file__).resolve().parent / "admin_static"
+COURIER_STATIC_DIR = Path(__file__).resolve().parent / "courier_static"
 
 
 def _rate_limit_key(request: Request) -> str:
@@ -147,7 +149,7 @@ def create_app(*, container: AppContainer, cors_origins: List[str]) -> FastAPI:
         # HTML / JS / CSS uchun aggressive cache'ni o'chiramiz (WebView eski versiyani
         # ko'rsatmasligi uchun). API JSON javoblariga bu tegmaydi.
         path = request.url.path
-        if path == "/" or path.startswith("/app/") or path.startswith("/admin"):
+        if path == "/" or path.startswith("/app/") or path.startswith("/admin") or path.startswith("/courier"):
             resp.headers["Cache-Control"] = "no-store, max-age=0, must-revalidate"
             resp.headers["Pragma"] = "no-cache"
         return resp
@@ -228,6 +230,7 @@ def create_app(*, container: AppContainer, cors_origins: List[str]) -> FastAPI:
     app.include_router(config_routes.router)
     app.include_router(cart_routes.router)
     app.include_router(geocode_routes.router)
+    app.include_router(courier_routes.router)
     # Debug — frontend loglar terminalda ko'rinsin. Production'da o'chiriladi
     # (env DEBUG_FRONTEND_LOGS=false default). Frontend baribir 404'ga toqat qiladi.
     from config import get_settings as _get_settings
@@ -266,6 +269,11 @@ def create_app(*, container: AppContainer, cors_origins: List[str]) -> FastAPI:
         app.mount("/admin", StaticFiles(directory=str(ADMIN_STATIC_DIR), html=True), name="admin")
     else:
         log.warning("ADMIN_STATIC_DIR topilmadi: %s", ADMIN_STATIC_DIR)
+
+    if COURIER_STATIC_DIR.is_dir():
+        app.mount("/courier", StaticFiles(directory=str(COURIER_STATIC_DIR), html=True), name="courier")
+    else:
+        log.warning("COURIER_STATIC_DIR topilmadi: %s", COURIER_STATIC_DIR)
 
     @app.get("/", include_in_schema=False)
     async def root():

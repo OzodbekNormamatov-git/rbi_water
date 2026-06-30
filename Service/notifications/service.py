@@ -5,11 +5,13 @@ Formatter sof funktiyalar `formatters.py` da — alohida testlash mumkin.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Iterable, Optional
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramAPIError, TelegramForbiddenError
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 
 from Domain.models.order import Order
 from Service.order_display import order_display_number
@@ -41,6 +43,8 @@ class NotificationService:
         courier_group_chat_id: int,
         admin_telegram_ids: Iterable[int],
         brand_name: str,
+        session_factory=None,
+        webapp_url: Optional[str] = None,
     ) -> None:
         self._courier_bot = courier_bot
         self._customer_bot = customer_bot
@@ -48,6 +52,9 @@ class NotificationService:
         self._courier_group_chat_id = courier_group_chat_id
         self._admin_telegram_ids = list(admin_telegram_ids)
         self._brand_name = brand_name
+        # Kuryer web app DM bildirishnomasi uchun (aktiv kuryerlarni topish + tugma URL).
+        self._session_factory = session_factory
+        self._webapp_url = (webapp_url or "").rstrip("/") or None
 
     # ---------------------- Couriers group ----------------------
 
@@ -81,6 +88,47 @@ class NotificationService:
         except TelegramAPIError as e:
             log.warning("Guruhga lokatsiya yuborilmadi #%s: %s", order.id, e)
         return msg.message_id
+
+    async def notify_couriers_new_order(self, order: Order) -> None:
+        """Har aktiv kuryerga DM — yangi buyurtma, web app'ni ochuvchi tugma bilan.
+
+        Guruhga yuborishga QO'SHIMCHA: kuryer ilovani yopiq bo'lsa ham biladi.
+        Best-effort — bloklagan/yetib bo'lmaydigan kuryerlar jim o'tkaziladi."""
+        if self._session_factory is None:
+            return
+        from Data.unit_of_work import UnitOfWork
+        try:
+            async with UnitOfWork(self._session_factory) as uow:
+                tg_ids = await uow.couriers.list_active_started_telegram_ids()
+        except Exception as e:  # DB muammosi bildirishnomani to'xtatmasin
+            log.warning("Aktiv kuryerlar ro'yxatini olishda xato: %s", e)
+            return
+        if not tg_ids:
+            return
+        from Bots.common import fmt_money
+        addr = (order.address_details or "").strip()
+        text = (
+            f"🆕 <b>Yangi buyurtma {order_display_number(order)}</b>\n"
+            f"💰 {fmt_money(order.total_amount)}"
+            + (f"\n📍 {addr}" if addr else "")
+            + "\n\nKim birinchi olsa — o'shaniki. Olish uchun ilovani oching 👇"
+        )
+        kb = None
+        if self._webapp_url:
+            kb = InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(
+                    text="📋 Buyurtmani olish",
+                    web_app=WebAppInfo(url=f"{self._webapp_url}/courier/"),
+                )
+            ]])
+        for tg in tg_ids:
+            try:
+                await self._courier_bot.send_message(chat_id=int(tg), text=text, reply_markup=kb)
+            except TelegramForbiddenError:
+                pass  # kuryer botni bloklagan — jim o'tkazamiz
+            except TelegramAPIError as e:
+                log.debug("Kuryerga DM yuborilmadi tg=%s: %s", tg, e)
+            await asyncio.sleep(0.05)  # Telegram rate-limit
 
     async def reopen_group_message(self, order: Order) -> None:
         if not order.group_message_id:

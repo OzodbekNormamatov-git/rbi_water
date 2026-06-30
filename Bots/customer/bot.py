@@ -543,6 +543,11 @@ def build_customer_dispatcher(
                 await order_service.attach_group_message(order.id, msg_id)
         except (TelegramAPIError, OSError) as e:
             log.warning("Buyurtmani kuryer guruhiga yuborib bo'lmadi #%s: %s", order.id, e)
+        # Har aktiv kuryerga DM (web app'ni ochuvchi tugma bilan) — best-effort.
+        try:
+            await notification_service.notify_couriers_new_order(order)
+        except Exception as e:  # bildirishnoma buyurtmani buzmasin
+            log.warning("Kuryerlarga DM bildirishnoma yuborilmadi #%s: %s", order.id, e)
 
     @dp.message(Checkout.confirming)
     async def checkout_confirming_other(message: Message) -> None:
