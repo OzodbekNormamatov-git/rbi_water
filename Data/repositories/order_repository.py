@@ -73,12 +73,20 @@ class OrderRepository(BaseRepository[Order]):
         return res.scalar_one_or_none()
 
     async def list_active_by_courier(self, courier_id: int) -> Sequence[Order]:
-        """Tugallanmagan (yetkazilmoqda yoki qabul qilingan) buyurtmalar."""
+        """Kuryerning tugallanmagan buyurtmalari — ACCEPTED, DELIVERING va ARRIVED.
+
+        ARRIVED ham kiradi: kuryer yetib kelgan, lekin hali bo'sh idishlarni
+        kiritib buyurtmani yopmagan (web app'da "Menikim" tab'da ko'rinishi va
+        yangi buyurtma claim'ini bloklashi shart — kuryer hali band)."""
         res = await self._session.execute(
             self._active_only(self._full_query())
             .where(
                 Order.courier_id == courier_id,
-                Order.status.in_([OrderStatus.ACCEPTED, OrderStatus.DELIVERING]),
+                Order.status.in_([
+                    OrderStatus.ACCEPTED,
+                    OrderStatus.DELIVERING,
+                    OrderStatus.ARRIVED,
+                ]),
             )
             .order_by(Order.created_at.asc())
         )
