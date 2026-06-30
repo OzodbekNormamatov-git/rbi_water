@@ -115,15 +115,22 @@ async function renderActive() {
   } else if (st === "DELIVERING") {
     actions = `<button class="btn btn--go" data-act="arrived" data-id="${o.id}">📍 Yetib keldim</button>`;
   } else if (st === "ARRIVED") {
+    // Yakuniy tasdiq — botdagidek: bo'sh idishlar soni + yopish.
     _bottles = Number(o.bottles_returned || 0);
     actions = `
-      <div class="muted" style="margin-top:10px">♻️ Mijozdan olingan bo'sh idishlar:</div>
-      <div class="stepper">
-        <button data-bottle="dec">−</button>
-        <div class="val" id="btlVal">${_bottles}</div>
-        <button data-bottle="inc">+</button>
+      <div style="margin-top:12px;border:1px solid var(--brand);border-radius:12px;padding:12px;background:#f0fdfa">
+        <div style="font-weight:700;margin-bottom:8px">📋 Yakuniy tasdiq</div>
+        <div class="row"><span style="flex:1">💵 Naqd olaman:</span><b>${money(o.total_amount)}</b></div>
+        <div style="font-weight:700;margin-top:12px;text-align:center">♻️ Mijozdan nechta bo'sh idish oldingiz?</div>
+        <div class="stepper">
+          <button data-bottle="dec" type="button">−</button>
+          <div class="val" id="btlVal">${_bottles}</div>
+          <button data-bottle="inc" type="button">+</button>
+        </div>
+        <div class="muted" style="text-align:center;font-size:12px">Olmagan bo'lsangiz — 0 qoldiring</div>
       </div>
-      <button class="btn btn--ok" data-act="delivered" data-id="${o.id}">✅ Yetkazib berildi — yopish</button>`;
+      <button class="btn btn--ok" data-act="delivered" data-id="${o.id}">✅ Yetkazib berildi — yopish</button>
+      <div class="muted" style="font-size:12px;text-align:center;margin-top:4px">Bossangiz: pul + idishlar javobgarligi sizda, buyurtma yopiladi.</div>`;
   }
   screen.innerHTML = `
     <div class="card">
