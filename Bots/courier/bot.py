@@ -17,13 +17,16 @@ import logging
 from aiogram import Bot, Dispatcher, F
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ChatType, ParseMode
-from aiogram.filters import Command, CommandStart
-from aiogram.types import KeyboardButton, Message, ReplyKeyboardMarkup
+from aiogram.filters import CommandStart
+from aiogram.types import (
+    KeyboardButton,
+    Message,
+    ReplyKeyboardMarkup,
+    ReplyKeyboardRemove,
+)
 
-from Bots.common import fmt_money
 from Service.courier_service import CourierService
 from Service.exceptions import DomainError
-from Service.order_service import OrderService
 
 log = logging.getLogger(__name__)
 
@@ -34,21 +37,23 @@ def _pretty_name(user) -> str:
     return name or (user.username or f"tg{user.id}")
 
 
-BTN_STATS = "📊 Statistikam"
 BTN_SHARE_PHONE = "📞 Telefonimni yuborish"
 
 
-def _courier_main_kb(*, needs_phone: bool = False) -> ReplyKeyboardMarkup:
-    rows = [[KeyboardButton(text=BTN_STATS)]]
+def _courier_main_kb(*, needs_phone: bool = False):
+    """Telefon kerak bo'lsa — faqat "Telefonimni yuborish" tugmasi; aks holda
+    pastki klaviaturani butunlay olib tashlaymiz (statistika/ish web ilovada)."""
     if needs_phone:
-        rows.append([KeyboardButton(text=BTN_SHARE_PHONE, request_contact=True)])
-    return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
+        return ReplyKeyboardMarkup(
+            keyboard=[[KeyboardButton(text=BTN_SHARE_PHONE, request_contact=True)]],
+            resize_keyboard=True,
+        )
+    return ReplyKeyboardRemove()
 
 
 def build_courier_dispatcher(
     *,
     courier_service: CourierService,
-    order_service: OrderService,
     courier_group_chat_id: int,
 ) -> Dispatcher:
     dp = Dispatcher()
@@ -119,35 +124,9 @@ def build_courier_dispatcher(
             return
         await message.answer(
             f"✅ Telefon raqamingiz saqlandi: <code>{courier.phone_number}</code>\n\n"
-            f"Endi mijozlar buyurtma detalida sizga qo'ng'iroq qila olishadi.",
+            f"Endi mijozlar buyurtma detalida sizga qo'ng'iroq qila olishadi. "
+            f"Buyurtmalar va statistika — <b>ilovada</b> (menyu tugmasi).",
             reply_markup=_courier_main_kb(needs_phone=False),
-        )
-
-    # ------------------------------------------------------------------
-    # 📊 Statistikam (qisqacha; batafsil ilovada)
-    # ------------------------------------------------------------------
-    @dp.message(F.chat.type == ChatType.PRIVATE, F.text == BTN_STATS)
-    @dp.message(Command("stats"), F.chat.type == ChatType.PRIVATE)
-    async def my_stats(message: Message) -> None:
-        courier = await courier_service.get_by_telegram_id(message.from_user.id)
-        if courier is None:
-            await message.answer("Avval /start bosing.")
-            return
-        stats = await order_service.delivered_stats_for_courier(courier.id)
-        cash = courier.cash_balance or 0
-        cash_line = (
-            f"\n\n💵 <b>Qo'lingizdagi naqd:</b> {fmt_money(cash)}\n"
-            f"<i>Bu summani kompaniyaga topshirishingiz kerak.</i>"
-            if cash and float(cash) > 0 else ""
-        )
-        await message.answer(
-            "📊 <b>Sizning statistikangiz</b> (yetkazib berilgan zakazlar):\n\n"
-            f"• Bugun: <b>{stats.today}</b>\n"
-            f"• Shu oyda: <b>{stats.month}</b>\n"
-            f"• Shu yilda: <b>{stats.year}</b>\n"
-            f"• Hammasi: <b>{stats.total}</b>"
-            f"{cash_line}",
-            reply_markup=_courier_main_kb(),
         )
 
     return dp

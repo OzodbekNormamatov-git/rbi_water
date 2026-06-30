@@ -126,7 +126,6 @@ async def _run() -> None:
     )
     courier_dp = build_courier_dispatcher(
         courier_service=courier_service,
-        order_service=order_service,
         courier_group_chat_id=settings.courier_group_chat_id,
     )
 
